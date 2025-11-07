@@ -34,16 +34,15 @@ class ClientToolCall {
 
 /// Interruption event
 class InterruptionEvent {
-  /// Event identifier
-  final int eventId;
+  final int? eventId;
 
   InterruptionEvent({
-    required this.eventId,
+    this.eventId,
   });
 
   factory InterruptionEvent.fromJson(Map<String, dynamic> json) {
     return InterruptionEvent(
-      eventId: json['event_id'] as int,
+      eventId: json['event_id'] as int?,
     );
   }
 }

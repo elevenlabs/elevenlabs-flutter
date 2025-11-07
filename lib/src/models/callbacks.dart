@@ -58,6 +58,9 @@ class ConversationCallbacks {
   /// Called with debug information
   final void Function(dynamic data)? onDebug;
 
+  /// Called when the agent requests to end the call (via end_call tool)
+  final void Function()? onEndCallRequested;
+
   const ConversationCallbacks({
     this.onConnect,
     this.onDisconnect,
@@ -77,6 +80,7 @@ class ConversationCallbacks {
     this.onMcpConnectionStatus,
     this.onAgentToolResponse,
     this.onDebug,
+    this.onEndCallRequested,
   });
 }
 

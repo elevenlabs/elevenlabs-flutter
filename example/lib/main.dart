@@ -13,7 +13,14 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ElevenLabs Flutter Example',
-      theme: ThemeData.dark(useMaterial3: true),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.black,
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: Colors.white,
+      ),
       home: const ConversationScreen(),
     );
   }
@@ -28,12 +35,10 @@ class ConversationScreen extends StatefulWidget {
 
 class _ConversationScreenState extends State<ConversationScreen> {
   late ConversationClient _client;
-  final _messageController = TextEditingController();
   final _agentIdController = TextEditingController(
     text: 'agent_4901k7fh5jkrecmbn5zsm7d38z3h', // Default agent ID
   );
-  final _messages = <ConversationMessage>[];
-  final _scrollController = ScrollController();
+  final _messageController = TextEditingController();
 
   @override
   void initState() {
@@ -68,15 +73,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
           _showSnackBar('Disconnected: ${details.reason}', Colors.orange);
         },
         onMessage: ({required message, required source}) {
-          debugPrint('💬 Message: $message');
-          setState(() {
-            _messages.add(ConversationMessage(
-              text: message,
-              source: source,
-              timestamp: DateTime.now(),
-            ));
-          });
-          _scrollToBottom();
+          debugPrint('💬 ${source.name}: $message');
         },
         onModeChange: ({required mode}) {
           debugPrint('🔊 Mode: ${mode.name}');
@@ -102,25 +99,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
           debugPrint('🐛 Debug: $data');
         },
       ),
-      clientTools: {
-        'logMessage': LogMessageTool(),
-      },
     );
 
     _client.addListener(() {
       setState(() {});
-    });
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
     });
   }
 
@@ -138,9 +120,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
   @override
   void dispose() {
     _client.dispose();
-    _messageController.dispose();
     _agentIdController.dispose();
-    _scrollController.dispose();
+    _messageController.dispose();
     super.dispose();
   }
 
@@ -164,9 +145,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
   Future<void> _endConversation() async {
     try {
       await _client.endSession();
-      setState(() {
-        _messages.clear();
-      });
     } catch (e) {
       _showSnackBar('Failed to end: $e', Colors.red);
     }
@@ -174,336 +152,346 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
   Future<void> _toggleMute() async {
     await _client.toggleMute();
+    setState(() {});
   }
 
   void _sendMessage() {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      _showSnackBar('Please enter a message', Colors.orange);
+      return;
+    }
 
     _client.sendUserMessage(text);
     _messageController.clear();
+    _showSnackBar('Message sent', Colors.green);
   }
 
-  void _sendContextualUpdate() {
+  void _sendContextualMessage() {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      _showSnackBar('Please enter a contextual message', Colors.orange);
+      return;
+    }
 
     _client.sendContextualUpdate(text);
     _messageController.clear();
-    _showSnackBar('Contextual update sent', Colors.blue);
+    _showSnackBar('Contextual message sent', Colors.blue);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isConnected = _client.status == ConversationStatus.connected;
+    final isDisconnected = _client.status == ConversationStatus.disconnected;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('ElevenLabs Flutter Example'),
-        centerTitle: true,
-      ),
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              // Status indicator
-              StatusIndicator(status: _client.status),
-              const SizedBox(height: 16),
-
-              // Conversation ID display
-              if (_client.conversationId != null)
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // ElevenLabs Logo
+                Image.asset(
+                  'assets/elevenlabs_logo.png',
+                  height: 40,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 16),
                 Text(
-                  'ID: ${_client.conversationId}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-
-              // Speaking indicator
-              if (_client.status == ConversationStatus.connected)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: SpeakingIndicator(
-                    isSpeaking: _client.isSpeaking,
-                    mode: _client.mode,
+                  'Flutter Example App',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[700],
+                    letterSpacing: 1,
                   ),
                 ),
+                const SizedBox(height: 60),
 
-              const SizedBox(height: 16),
-
-              // Agent ID input (only when disconnected)
-              if (_client.status == ConversationStatus.disconnected)
-                TextField(
-                  controller: _agentIdController,
-                  decoration: const InputDecoration(
-                    labelText: 'Agent ID',
-                    border: OutlineInputBorder(),
-                    hintText: 'Enter your agent ID',
-                  ),
-                ),
-
-              const SizedBox(height: 16),
-
-              // Control buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _client.status == ConversationStatus.disconnected
-                        ? _startConversation
-                        : null,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Start'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: _client.status == ConversationStatus.connected
-                        ? _endConversation
-                        : null,
-                    icon: const Icon(Icons.stop),
-                    label: const Text('End'),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: Icon(_client.isMuted ? Icons.mic_off : Icons.mic),
-                    onPressed: _client.status == ConversationStatus.connected
-                        ? _toggleMute
-                        : null,
-                    color: _client.isMuted ? Colors.red : Colors.green,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              // Feedback buttons
-              if (_client.canSendFeedback)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.thumb_up),
-                      onPressed: () => _client.sendFeedback(isPositive: true),
-                      color: Colors.green,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.thumb_down),
-                      onPressed: () => _client.sendFeedback(isPositive: false),
-                      color: Colors.red,
-                    ),
-                  ],
-                ),
-
-              const SizedBox(height: 16),
-
-              // Message list
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: _messages.isEmpty
-                      ? const Center(
-                          child: Text('No messages yet'),
-                        )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(8),
-                          itemCount: _messages.length,
-                          itemBuilder: (context, index) {
-                            final msg = _messages[index];
-                            return MessageBubble(message: msg);
-                          },
+                // Agent ID Input (only when disconnected)
+                if (isDisconnected) ...[
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: TextField(
+                      controller: _agentIdController,
+                      style: const TextStyle(fontSize: 14, color: Colors.black),
+                      decoration: InputDecoration(
+                        labelText: 'Agent ID',
+                        hintText: 'Enter your agent ID',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Message input
-              if (_client.status == ConversationStatus.connected)
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        decoration: const InputDecoration(
-                          hintText: 'Type a message...',
-                          border: OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: Colors.grey[300]!,
+                          ),
                         ),
-                        onChanged: (_) => _client.sendUserActivity(),
-                        onSubmitted: (_) => _sendMessage(),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Colors.black,
+                            width: 2,
+                          ),
+                        ),
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.send),
-                      onPressed: _sendMessage,
-                      tooltip: 'Send message',
+                  ),
+                  const SizedBox(height: 32),
+                ],
+
+                // Speaking Indicator
+                if (isConnected) ...[
+                  Container(
+                    padding: const EdgeInsets.all(40),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          (_client.isSpeaking ? Colors.black : Colors.grey[400]!)
+                              .withOpacity(0.2),
+                          Colors.transparent,
+                        ],
+                      ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.note_add),
-                      onPressed: _sendContextualUpdate,
-                      tooltip: 'Send contextual update',
+                    child: Container(
+                      padding: const EdgeInsets.all(30),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _client.isSpeaking
+                            ? Colors.black
+                            : Colors.grey[300],
+                      ),
+                      child: Icon(
+                        _client.isSpeaking ? Icons.graphic_eq : Icons.mic,
+                        size: 64,
+                        color: _client.isSpeaking ? Colors.white : Colors.grey[700],
+                      ),
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    _client.isSpeaking ? 'Agent Speaking...' : 'Listening...',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 48),
+                ],
+
+                // Main Action Button
+                Container(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  height: 56,
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: isDisconnected ? _startConversation : isConnected ? _endConversation : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isConnected ? Colors.red[600] : Colors.black,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      disabledBackgroundColor: Colors.grey[300],
+                    ),
+                    child: Text(
+                      isConnected ? 'Disconnect' : isDisconnected ? 'Connect' : 'Connecting...',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
                 ),
-            ],
+
+                // Mute Button (only when connected)
+                if (isConnected) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    height: 56,
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _toggleMute,
+                      icon: Icon(_client.isMuted ? Icons.mic_off : Icons.mic),
+                      label: Text(_client.isMuted ? 'Unmute' : 'Mute'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _client.isMuted ? Colors.red[600] : Colors.grey[700],
+                        side: BorderSide(
+                          color: (_client.isMuted ? Colors.red[600] : Colors.grey[400])!,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Message Input Section (only when connected)
+                  const SizedBox(height: 32),
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: Column(
+                      children: [
+                        // Text Input Field
+                        TextField(
+                          controller: _messageController,
+                          maxLines: 3,
+                          style: const TextStyle(fontSize: 14, color: Colors.black),
+                          onChanged: (_) => _client.sendUserActivity(),
+                          onSubmitted: (_) => _sendMessage(),
+                          textInputAction: TextInputAction.send,
+                          decoration: InputDecoration(
+                            hintText: 'Type your message here...',
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Colors.grey[300]!,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: Colors.black,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Action Buttons Row
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _sendMessage,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.black,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Send',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _sendContextualMessage,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.grey[700],
+                                  side: BorderSide(color: Colors.grey[400]!),
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Send contextual',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Status Indicator
+                const SizedBox(height: 32),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(_client.status).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _getStatusColor(_client.status).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _getStatusColor(_client.status),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _client.status.name.toUpperCase(),
+                        style: TextStyle(
+                          color: _getStatusColor(_client.status),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Conversation ID
+                if (_client.conversationId != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'ID: ${_client.conversationId}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
-}
 
-class StatusIndicator extends StatelessWidget {
-  final ConversationStatus status;
-
-  const StatusIndicator({super.key, required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    Color color;
-    IconData icon;
-
+  Color _getStatusColor(ConversationStatus status) {
     switch (status) {
       case ConversationStatus.connected:
-        color = Colors.green;
-        icon = Icons.check_circle;
-        break;
+        return Colors.green;
       case ConversationStatus.connecting:
-        color = Colors.orange;
-        icon = Icons.sync;
-        break;
+        return Colors.orange;
       case ConversationStatus.disconnecting:
-        color = Colors.orange;
-        icon = Icons.sync;
-        break;
+        return Colors.orange;
       case ConversationStatus.disconnected:
-        color = Colors.red;
-        icon = Icons.cancel;
-        break;
+        return Colors.grey;
     }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 8),
-          Text(
-            status.name.toUpperCase(),
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
   }
 }
-
-class SpeakingIndicator extends StatelessWidget {
-  final bool isSpeaking;
-  final ConversationMode mode;
-
-  const SpeakingIndicator({
-    super.key,
-    required this.isSpeaking,
-    required this.mode,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          isSpeaking ? Icons.record_voice_over : Icons.hearing,
-          color: isSpeaking ? Colors.purple : Colors.grey,
-        ),
-        const SizedBox(width: 8),
-        Text(
-          isSpeaking ? 'AI Speaking' : 'AI Listening',
-          style: TextStyle(
-            color: isSpeaking ? Colors.purple : Colors.grey,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class MessageBubble extends StatelessWidget {
-  final ConversationMessage message;
-
-  const MessageBubble({super.key, required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    final isUser = message.source == Role.user;
-
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.7,
-        ),
-        decoration: BoxDecoration(
-          color: isUser ? Colors.blue : Colors.grey[800],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              isUser ? 'You' : 'AI',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-                color: isUser ? Colors.white70 : Colors.white60,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              message.text,
-              style: const TextStyle(fontSize: 14),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class ConversationMessage {
-  final String text;
-  final Role source;
-  final DateTime timestamp;
-
-  ConversationMessage({
-    required this.text,
-    required this.source,
-    required this.timestamp,
-  });
-}
-
-// Example client tool implementation
-class LogMessageTool implements ClientTool {
-  @override
-  Future<ClientToolResult?> execute(Map<String, dynamic> parameters) async {
-    final message = parameters['message'] as String?;
-    if (message == null) {
-      return ClientToolResult.failure('Missing message parameter');
-    }
-
-    debugPrint('📝 Client Tool Log: $message');
-
-    // Return null for fire-and-forget tools
-    return null;
-  }
-}
-

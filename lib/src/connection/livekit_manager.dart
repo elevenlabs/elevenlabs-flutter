@@ -6,7 +6,9 @@ import 'package:livekit_client/livekit_client.dart';
 /// Manages LiveKit Room connection and audio tracks
 class LiveKitManager {
   Room? _room;
-  LocalAudioTrack? _localAudioTrack;
+  EventsListener<RoomEvent>? _eventsListener;
+  Timer? _speakingDebounceTimer;
+  bool _lastSpeakingState = false;
 
   /// Stream controller for incoming data messages
   final _dataStreamController = StreamController<Map<String, dynamic>>.broadcast();
@@ -20,11 +22,23 @@ class LiveKitManager {
   /// Stream of connection state changes
   Stream<ConnectionState> get stateStream => _stateStreamController.stream;
 
+  /// Stream controller for room ready event (connected + local participant published)
+  final _roomReadyController = StreamController<void>.broadcast();
+
+  /// Stream that emits when the room is fully ready to send messages
+  Stream<void> get roomReadyStream => _roomReadyController.stream;
+
+  /// Stream controller for agent speaking state
+  final _speakingStateController = StreamController<bool>.broadcast();
+
+  /// Stream that emits when agent starts/stops speaking
+  Stream<bool> get speakingStateStream => _speakingStateController.stream;
+
   /// Current room instance
   Room? get room => _room;
 
   /// Whether the microphone is muted
-  bool get isMuted => _localAudioTrack?.muted ?? false;
+  bool get isMuted => !(_room?.localParticipant?.isMicrophoneEnabled() ?? false);
 
   /// Connects to a LiveKit server
   Future<void> connect(String serverUrl, String token) async {
@@ -37,37 +51,100 @@ class LiveKitManager {
       // Create room
       _room = Room();
 
-      // Set up event listeners
-      _room!.addListener(_onRoomEvent);
+      // Set up specific event listeners
+      _eventsListener = _room!.createListener();
 
-      // Listen for data messages
-      _room!.addListener(() {
-        for (final participant in _room!.remoteParticipants.values) {
-          // Set up data listener for each participant
-          participant.addListener(() {
-            // This will be triggered when data is received
-          });
-        }
-      });
+      _eventsListener!
+        ..on<RoomConnectedEvent>((event) {
+          debugPrint('✅ Room connected!');
+          _stateStreamController.add(ConnectionState.connected);
+        })
+        ..on<RoomDisconnectedEvent>((event) {
+          debugPrint('❌ Room disconnected: ${event.reason}');
+          _stateStreamController.add(ConnectionState.disconnected);
+        })
+        ..on<RoomReconnectingEvent>((event) {
+          debugPrint('🔄 Room reconnecting...');
+          _stateStreamController.add(ConnectionState.reconnecting);
+        })
+        ..on<RoomReconnectedEvent>((event) {
+          debugPrint('✅ Room reconnected!');
+          _stateStreamController.add(ConnectionState.connected);
+        })
+        ..on<DataReceivedEvent>((event) {
+          // Handle incoming data messages
+          try {
+            final data = utf8.decode(event.data);
+            final message = jsonDecode(data) as Map<String, dynamic>;
+            _dataStreamController.add(message);
+            // debugPrint('📥 Data received: $message');
+          } catch (e) {
+            debugPrint('❌ Error decoding data: $e');
+          }
+        })
+        ..on<TrackSubscribedEvent>((event) {
+          debugPrint('🔊 Track subscribed: ${event.track.kind}');
+          // Audio playback is handled automatically by LiveKit
+        })
+        ..on<TrackUnsubscribedEvent>((event) {
+          debugPrint('🔇 Track unsubscribed: ${event.track.kind}');
+        })
+        ..on<ParticipantConnectedEvent>((event) {
+          debugPrint('👤 Participant connected: ${event.participant.identity}');
+        })
+        ..on<ParticipantDisconnectedEvent>((event) {
+          debugPrint('👋 Participant disconnected: ${event.participant.identity}');
+          // If the agent disconnects, we should end the session
+          if (event.participant.identity.startsWith('agent-')) {
+            debugPrint('⚠️ Agent disconnected, ending session');
+            _stateStreamController.add(ConnectionState.disconnected);
+          }
+        })
+        ..on<TrackMutedEvent>((event) {
+          debugPrint('🔇 Track muted: ${event.publication.kind}');
+        })
+        ..on<TrackUnmutedEvent>((event) {
+          debugPrint('🔊 Track unmuted: ${event.publication.kind}');
+        })
+        ..on<AudioPlaybackStatusChanged>((event) async {
+          // Handle audio playback issues (especially for iOS)
+          if (!_room!.canPlaybackAudio) {
+            debugPrint('⚠️ Audio playback not available, attempting to start...');
+            try {
+              await _room!.startAudio();
+              debugPrint('✅ Audio playback started');
+            } catch (e) {
+              debugPrint('❌ Failed to start audio playback: $e');
+            }
+          }
+        })
+        ..on<ActiveSpeakersChangedEvent>((event) {
+          // Check if agent is in the active speakers list
+          final agentIsSpeaking = event.speakers.any(
+            (speaker) => speaker.identity.startsWith('agent-')
+          );
+          _handleSpeakingStateChange(agentIsSpeaking);
+        });
 
       // Connect to LiveKit server
       await _room!.connect(serverUrl, token);
       debugPrint('✅ Connected to LiveKit successfully');
 
-      // Create and publish local audio track
-      _localAudioTrack = await LocalAudioTrack.create(
-        AudioCaptureOptions(
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        ),
-      );
+      // Enable speakerphone on Android
+      try {
+        await Hardware.instance.setSpeakerphoneOn(true);
+        debugPrint('🔊 Speakerphone enabled (Android)');
+      } catch (e) {
+        debugPrint('Note: Could not enable speakerphone: $e');
+      }
 
+      // Enable microphone (LiveKit handles track creation automatically)
       await _room!.localParticipant?.setMicrophoneEnabled(true);
+      debugPrint('🎤 Microphone enabled');
 
-      await _room!.localParticipant?.publishAudioTrack(_localAudioTrack!);
-      debugPrint('🎤 Local audio track published');
-
+      // Emit room ready event - connection is fully established and ready for messages
+      _roomReadyController.add(null);
+      debugPrint('✅ Room ready for messaging');
 
     } catch (e) {
       debugPrint('❌ LiveKit Connection Error: $e');
@@ -75,46 +152,11 @@ class LiveKitManager {
     }
   }
 
-  /// Handles room events
-  void _onRoomEvent() {
-    final currentRoom = _room;
-    if (currentRoom == null) return;
-
-    // Emit connection state changes
-    _stateStreamController.add(currentRoom.connectionState);
-
-    // Handle remote tracks (agent audio) - LiveKit handles playback automatically
-    // Data messages are handled via EventsListener in setupDataListener
-  }
-
-  /// Sets up data message listener
-  void setupDataListener() {
-    final currentRoom = _room;
-    if (currentRoom == null) return;
-
-    // Listen for data messages from the room
-    currentRoom.addListener(() {
-      _handleDataEvents();
-    });
-
-    // Set up initial listeners for existing participants
-    _handleDataEvents();
-  }
-
-  void _handleDataEvents() {
-    final currentRoom = _room;
-    if (currentRoom == null) return;
-
-    // Note: Data events will come through LiveKit's event system
-    // The actual implementation would use LiveKit's onDataReceived stream
-    // This is a simplified placeholder - LiveKit handles data channel events
-  }
 
   /// Sends a data message to the room
   Future<void> sendMessage(Map<String, dynamic> message) async {
     final currentRoom = _room;
     if (currentRoom == null) {
-      debugPrint('❌ Cannot send message: Not connected to room');
       throw StateError('Not connected to room');
     }
 
@@ -126,7 +168,6 @@ class LiveKitManager {
         bytes,
         reliable: true,
       );
-      debugPrint('📤 Message sent: ${message['type']}');
     } catch (e) {
       debugPrint('❌ Failed to send message: $e');
       rethrow;
@@ -135,40 +176,79 @@ class LiveKitManager {
 
   /// Sets the microphone mute state
   Future<void> setMicMuted(bool muted) async {
-    await _localAudioTrack?.mute();
-    if (!muted) {
-      await _localAudioTrack?.unmute();
-    }
+    await _room?.localParticipant?.setMicrophoneEnabled(!muted);
   }
 
   /// Toggles the microphone mute state
   Future<void> toggleMute() async {
-    final track = _localAudioTrack;
-    if (track != null) {
-      if (track.muted) {
-        await track.unmute();
-      } else {
-        await track.mute();
+    final currentlyEnabled = _room?.localParticipant?.isMicrophoneEnabled() ?? false;
+    await _room?.localParticipant?.setMicrophoneEnabled(!currentlyEnabled);
+  }
+
+  /// Handles speaking state changes with debouncing to prevent flickering
+  void _handleSpeakingStateChange(bool isSpeaking) {
+    if (isSpeaking) {
+      // Agent started speaking - immediately update and cancel any pending timer
+      _speakingDebounceTimer?.cancel();
+      _speakingDebounceTimer = null;
+
+      if (_lastSpeakingState != isSpeaking) {
+        _lastSpeakingState = isSpeaking;
+        _speakingStateController.add(isSpeaking);
       }
+    } else {
+      // Agent stopped speaking - debounce to avoid flickering during pauses
+      _speakingDebounceTimer?.cancel();
+      _speakingDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+        if (_lastSpeakingState != isSpeaking) {
+          _lastSpeakingState = isSpeaking;
+          _speakingStateController.add(isSpeaking);
+        }
+      });
     }
   }
 
   /// Disconnects from the LiveKit server and cleans up resources
   Future<void> disconnect() async {
+    // Cancel any pending debounce timer
+    _speakingDebounceTimer?.cancel();
+    _speakingDebounceTimer = null;
+    _lastSpeakingState = false;
+
+    // Dispose of event listener first
+    await _eventsListener?.dispose();
+    _eventsListener = null;
+
     final currentRoom = _room;
     if (currentRoom != null) {
-      await currentRoom.disconnect();
-      await currentRoom.dispose();
+      try {
+        // Add timeout to prevent hanging
+        await currentRoom.disconnect().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            debugPrint('⚠️ Disconnect timeout - forcing cleanup');
+          },
+        );
+      } catch (e) {
+        debugPrint('Warning: Error during disconnect: $e');
+      }
+
+      try {
+        await currentRoom.dispose();
+      } catch (e) {
+        debugPrint('Warning: Error disposing room: $e');
+      }
+
       _room = null;
     }
-
-    _localAudioTrack = null;
   }
 
   /// Disposes of all resources
   void dispose() {
     _dataStreamController.close();
     _stateStreamController.close();
+    _roomReadyController.close();
+    _speakingStateController.close();
     disconnect();
   }
 }

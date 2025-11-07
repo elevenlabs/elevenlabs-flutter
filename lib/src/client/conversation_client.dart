@@ -9,6 +9,7 @@ import '../connection/livekit_manager.dart';
 import '../connection/token_service.dart';
 import '../messaging/message_handler.dart';
 import '../messaging/message_sender.dart';
+import '../utils/overrides.dart';
 
 /// Main client for managing conversations with ElevenLabs agents
 class ConversationClient extends ChangeNotifier {
@@ -30,8 +31,10 @@ class ConversationClient extends ChangeNotifier {
   bool _isSpeaking = false;
   String? _conversationId;
   int _lastFeedbackEventId = 0;
+  bool _overridesSent = false;
 
   StreamSubscription<livekit.ConnectionState>? _stateSubscription;
+  StreamSubscription<bool>? _speakingSubscription;
 
   /// Current connection status
   ConversationStatus get status => _status;
@@ -89,12 +92,7 @@ class ConversationClient extends ChangeNotifier {
       onStatusChange: callbacks?.onStatusChange,
       onError: callbacks?.onError,
       onMessage: callbacks?.onMessage,
-      onModeChange: ({required ConversationMode mode}) {
-        _mode = mode;
-        _isSpeaking = mode == ConversationMode.speaking;
-        notifyListeners();
-        callbacks?.onModeChange?.call(mode: mode);
-      },
+      onModeChange: callbacks?.onModeChange,
       onAudio: callbacks?.onAudio,
       onVadScore: callbacks?.onVadScore,
       onInterruption: callbacks?.onInterruption,
@@ -114,6 +112,12 @@ class ConversationClient extends ChangeNotifier {
       onMcpConnectionStatus: callbacks?.onMcpConnectionStatus,
       onAgentToolResponse: callbacks?.onAgentToolResponse,
       onDebug: callbacks?.onDebug,
+      onEndCallRequested: () {
+        // Agent requested to end the call - trigger session end
+        debugPrint('🔚 Agent requested end call, ending session');
+        endSession();
+        callbacks?.onEndCallRequested?.call();
+      },
     );
   }
 
@@ -139,6 +143,9 @@ class ConversationClient extends ChangeNotifier {
     }
 
     try {
+      // Ensure clean state (important for hot-reload and multiple sessions)
+      _overridesSent = false;
+
       _setStatus(ConversationStatus.connecting);
 
       // Get token and WebSocket URL
@@ -160,25 +167,41 @@ class ConversationClient extends ChangeNotifier {
 
       wsUrl = _websocketUrl ?? 'wss://livekit.rtc.elevenlabs.io';
 
-      // Connect to LiveKit
-      await _liveKitManager.connect(wsUrl, token);
-
-      // Set up data listener
-      _liveKitManager.setupDataListener();
-
-      // Start message handling
-      _messageHandler.startListening();
-
-      // Listen to connection state changes
+      // Listen to connection state changes (but don't set connected until after initialization)
       _stateSubscription = _liveKitManager.stateStream.listen((state) {
-        if (state == livekit.ConnectionState.connected) {
-          _setStatus(ConversationStatus.connected);
-        } else if (state == livekit.ConnectionState.disconnected) {
+        if (state == livekit.ConnectionState.disconnected) {
           _handleDisconnection('Connection lost');
         }
       });
 
+      // Listen to agent speaking state from LiveKit
+      _speakingSubscription = _liveKitManager.speakingStateStream.listen((isSpeaking) {
+        _mode = isSpeaking ? ConversationMode.speaking : ConversationMode.listening;
+        _isSpeaking = isSpeaking;
+        notifyListeners();
+        debugPrint('🗣️ Speaking state from LiveKit: $isSpeaking');
+      });
+
+      // Start message handling
+      _messageHandler.startListening();
+
+      // Start waiting for room ready event BEFORE connecting
+      final roomReadyFuture = _liveKitManager.roomReadyStream.first;
+
+      // Connect to LiveKit (will emit roomReady event when done)
+      await _liveKitManager.connect(wsUrl, token);
+
+      // Wait for room to be fully ready and send overrides
+      await roomReadyFuture;
+      await _sendOverrides(
+        userId: userId,
+        overrides: overrides,
+        customLlmExtraBody: customLlmExtraBody,
+        dynamicVariables: dynamicVariables,
+      );
+
       _setStatus(ConversationStatus.connected);
+      debugPrint('🎉 Conversation fully initialized and ready');
     } catch (e) {
       _setStatus(ConversationStatus.disconnected);
       _callbacks?.onError?.call('Failed to start session', e);
@@ -188,7 +211,9 @@ class ConversationClient extends ChangeNotifier {
 
   /// Ends the current conversation session
   Future<void> endSession() async {
-    if (_status == ConversationStatus.disconnected) {
+    if (_status == ConversationStatus.disconnected ||
+        _status == ConversationStatus.disconnecting) {
+      debugPrint('⚠️ Already disconnecting or disconnected, skipping');
       return;
     }
 
@@ -196,7 +221,9 @@ class ConversationClient extends ChangeNotifier {
       _setStatus(ConversationStatus.disconnecting);
       await _cleanup();
       _handleDisconnection('Session ended by user');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error ending session: $e');
+      debugPrint('Stack trace: $stackTrace');
       _callbacks?.onError?.call('Error ending session', e);
       _setStatus(ConversationStatus.disconnected);
     }
@@ -292,15 +319,55 @@ class ConversationClient extends ChangeNotifier {
     _setStatus(ConversationStatus.disconnected);
   }
 
+  /// Sends the conversation initiation overrides message
+  Future<void> _sendOverrides({
+    String? userId,
+    ConversationOverrides? overrides,
+    Map<String, dynamic>? customLlmExtraBody,
+    Map<String, dynamic>? dynamicVariables,
+  }) async {
+    // Guard against sending overrides multiple times
+    // This can happen during hot-reload when old stream listeners persist
+    if (_overridesSent) {
+      debugPrint('⚠️ Overrides already sent for this session, skipping duplicate');
+      return;
+    }
+
+    _overridesSent = true;
+
+    final config = ConversationConfig(
+      userId: userId,
+      overrides: overrides,
+      customLlmExtraBody: customLlmExtraBody,
+      dynamicVariables: dynamicVariables,
+    );
+
+    final overridesMessage = constructOverrides(config);
+
+    try {
+      await _liveKitManager.sendMessage(overridesMessage);
+      debugPrint('✅ Overrides sent successfully');
+    } catch (e) {
+      debugPrint('❌ Failed to send overrides: $e');
+      _overridesSent = false; // Reset flag on error so retry is possible
+      _callbacks?.onError?.call('Failed to send overrides', e);
+      rethrow;
+    }
+  }
+
   Future<void> _cleanup() async {
     await _stateSubscription?.cancel();
     _stateSubscription = null;
+
+    await _speakingSubscription?.cancel();
+    _speakingSubscription = null;
 
     _messageHandler.stopListening();
     await _liveKitManager.disconnect();
 
     _conversationId = null;
     _lastFeedbackEventId = 0;
+    _overridesSent = false; // Reset for next session
     notifyListeners();
   }
 

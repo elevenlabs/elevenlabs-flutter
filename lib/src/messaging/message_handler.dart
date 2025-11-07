@@ -53,38 +53,43 @@ class MessageHandler {
         _currentEventId = json['event_id'] as int;
       }
 
-      callbacks.onDebug?.call(json);
-
       switch (eventType) {
         case 'conversation_initiation_metadata':
+          callbacks.onDebug?.call(json);
           _handleConversationMetadata(json);
           break;
 
         case 'user_transcription':
+          callbacks.onDebug?.call(json);
           _handleUserTranscription(json);
           break;
 
         case 'agent_response':
+          callbacks.onDebug?.call(json);
           _handleAgentResponse(json);
           break;
 
         case 'agent_response_part':
+          callbacks.onDebug?.call(json);
           _handleAgentResponsePart(json);
           break;
 
         case 'audio':
+          callbacks.onDebug?.call(json);
           _handleAudio(json);
           break;
 
         case 'interruption':
+          callbacks.onDebug?.call(json);
           _handleInterruption(json);
           break;
 
         case 'ping':
-          _handlePing();
+          _handlePing(json);
           break;
 
         case 'client_tool_call':
+          callbacks.onDebug?.call(json);
           _handleClientToolCall(json);
           break;
 
@@ -97,11 +102,22 @@ class MessageHandler {
           break;
 
         case 'agent_tool_response':
+          callbacks.onDebug?.call(json);
           _handleAgentToolResponse(json);
+          break;
+
+        case "agent_chat_response_part":
+        case "internal_tentative_agent_response":
+        case "vad_score":
+        case "tentative_user_transcript":
+        case "user_transcript":
+        case "agent_response_correction":
+          callbacks.onDebug?.call(json);
           break;
 
         default:
           debugPrint('Unknown event type: $eventType');
+          callbacks.onDebug?.call(json);
       }
     } catch (e, stackTrace) {
       debugPrint('Error processing message: $e\n$stackTrace');
@@ -160,18 +176,23 @@ class MessageHandler {
   }
 
   void _handleInterruption(Map<String, dynamic> json) {
-    try {
-      final event = InterruptionEvent.fromJson(json);
-      callbacks.onInterruption?.call(event);
-    } catch (e) {
-      debugPrint('Error parsing interruption event: $e');
-    }
+    final event = InterruptionEvent.fromJson(json);
+    callbacks.onInterruption?.call(event);
   }
 
-  void _handlePing() {
-    // Respond to ping messages if needed
-    // For now, just acknowledge receipt
-    debugPrint('Received ping from agent');
+  void _handlePing(Map<String, dynamic> json) {
+    // Respond to ping with pong
+    final pingEvent = json['ping_event'] as Map<String, dynamic>?;
+    final eventId = pingEvent?['event_id'];
+
+    if (eventId != null) {
+      liveKit.sendMessage({
+        'type': 'pong',
+        'event_id': eventId,
+      }).catchError((e) {
+        debugPrint('❌ Failed to send pong: $e');
+      });
+    }
   }
 
   Future<void> _handleClientToolCall(Map<String, dynamic> json) async {
@@ -234,6 +255,12 @@ class MessageHandler {
     try {
       final response = AgentToolResponse.fromJson(json);
       callbacks.onAgentToolResponse?.call(response);
+
+      // If agent calls end_call tool, trigger session end
+      if (json['tool_name'] == 'end_call') {
+        debugPrint('🔚 Agent requested end_call, ending session');
+        callbacks.onEndCallRequested?.call();
+      }
     } catch (e) {
       debugPrint('Error parsing agent tool response: $e');
     }
