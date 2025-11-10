@@ -1,0 +1,19 @@
+# Exclude generated example files and build artifacts
+build/
+example/build/
+example/.dart_tool/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+example/pubspec.lock
+example/ios/Pods/
+example/ios/.symlinks/
+example/ios/Flutter/ephemeral/
+example/android/.gradle/
+example/android/local.properties
+example/linux/flutter/ephemeral/
+example/macos/Flutter/ephemeral/
+example/windows/flutter/ephemeral/
+
+# Keep the example code but exclude large build artifacts
+elevenlabs_flutter/
+

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 /// Manages LiveKit Room connection and audio tracks

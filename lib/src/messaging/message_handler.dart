@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import '../models/callbacks.dart';
 import '../models/conversation_status.dart';
 import '../models/events.dart';
