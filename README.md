@@ -44,11 +44,11 @@ flutter run
 
 ## Installation
 
-Add to your `pubspec.yaml`:
+Add to your `pubspec.yaml` (see version badge above):
 
 ```yaml
 dependencies:
-  elevenlabs_agents: ^0.1.0
+  elevenlabs_agents: ^[latest]
 ```
 
 Install dependencies:
