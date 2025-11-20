@@ -7,7 +7,7 @@ class TokenService {
   final String apiEndpoint;
 
   TokenService({String? apiEndpoint})
-    : apiEndpoint = apiEndpoint ?? 'https://api.elevenlabs.io';
+      : apiEndpoint = apiEndpoint ?? 'https://api.elevenlabs.io';
 
   /// Fetches a LiveKit token for public agents
   Future<({String token})> fetchToken({required String agentId}) async {

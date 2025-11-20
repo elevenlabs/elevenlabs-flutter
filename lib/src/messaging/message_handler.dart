@@ -271,9 +271,8 @@ class MessageHandler {
   }
 
   void _handleTentativeAgentResponse(Map<String, dynamic> json) {
-    final event =
-        json['tentative_agent_response_internal_event']
-            as Map<String, dynamic>?;
+    final event = json['tentative_agent_response_internal_event']
+        as Map<String, dynamic>?;
     final response = event?['tentative_agent_response'] as String?;
     if (response != null) {
       callbacks.onTentativeAgentResponse?.call(response: response);

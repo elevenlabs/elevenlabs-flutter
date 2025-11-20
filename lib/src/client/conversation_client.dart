@@ -59,10 +59,10 @@ class ConversationClient extends ChangeNotifier {
     String? websocketUrl,
     ConversationCallbacks? callbacks,
     Map<String, ClientTool>? clientTools,
-  }) : _apiEndpoint = apiEndpoint,
-       _websocketUrl = websocketUrl,
-       _callbacks = callbacks,
-       _clientTools = clientTools {
+  })  : _apiEndpoint = apiEndpoint,
+        _websocketUrl = websocketUrl,
+        _callbacks = callbacks,
+        _clientTools = clientTools {
     _initializeServices();
   }
 
@@ -179,9 +179,8 @@ class ConversationClient extends ChangeNotifier {
       _speakingSubscription = _liveKitManager.speakingStateStream.listen((
         isSpeaking,
       ) {
-        _mode = isSpeaking
-            ? ConversationMode.speaking
-            : ConversationMode.listening;
+        _mode =
+            isSpeaking ? ConversationMode.speaking : ConversationMode.listening;
         _isSpeaking = isSpeaking;
         notifyListeners();
         _callbacks?.onModeChange?.call(mode: _mode);
@@ -271,8 +270,8 @@ class ConversationClient extends ChangeNotifier {
     _messageSender
         .sendFeedback(isPositive: isPositive, eventId: eventId)
         .catchError((e) {
-          _callbacks?.onError?.call('Failed to send feedback', e);
-        });
+      _callbacks?.onError?.call('Failed to send feedback', e);
+    });
   }
 
   /// Sets the microphone mute state

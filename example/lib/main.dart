@@ -343,12 +343,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     onPressed: isDisconnected
                         ? _startConversation
                         : isConnected
-                        ? _endConversation
-                        : null,
+                            ? _endConversation
+                            : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isConnected
-                          ? Colors.red[600]
-                          : Colors.black,
+                      backgroundColor:
+                          isConnected ? Colors.red[600] : Colors.black,
                       foregroundColor: Colors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
@@ -360,8 +359,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                       isConnected
                           ? 'Disconnect'
                           : isDisconnected
-                          ? 'Connect'
-                          : 'Connecting...',
+                              ? 'Connect'
+                              : 'Connecting...',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,

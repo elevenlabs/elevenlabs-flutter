@@ -28,8 +28,8 @@ class TestableConversationClient extends ChangeNotifier {
     this.clientTools,
     MockLiveKitManager? liveKitManager,
     MockTokenService? tokenService,
-  }) : liveKitManager = liveKitManager ?? MockLiveKitManager(),
-       tokenService = tokenService ?? MockTokenService();
+  })  : liveKitManager = liveKitManager ?? MockLiveKitManager(),
+        tokenService = tokenService ?? MockTokenService();
 
   Future<void> startSession({
     String? agentId,
@@ -86,9 +86,8 @@ class TestableConversationClient extends ChangeNotifier {
         _isSpeaking = speaking;
         notifyListeners();
         callbacks?.onModeChange?.call(
-          mode: speaking
-              ? ConversationMode.speaking
-              : ConversationMode.listening,
+          mode:
+              speaking ? ConversationMode.speaking : ConversationMode.listening,
         );
       });
 
