@@ -42,6 +42,16 @@ jobs:
       - name: Create example .env file
         run: touch example/.env
 
+      - name: Verify CHANGELOG is updated
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          if ! grep -q "## \[$VERSION\]" CHANGELOG.md; then
+            echo "Error: CHANGELOG.md does not contain version $VERSION"
+            echo "Please update CHANGELOG.md to include an entry for version $VERSION"
+            exit 1
+          fi
+          echo "✓ CHANGELOG.md contains version $VERSION"
+
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
 

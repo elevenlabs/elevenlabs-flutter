@@ -44,6 +44,34 @@ jobs:
       - name: Create .env for analysis
         run: touch example/.env
 
+      - name: Verify CHANGELOG is updated
+        run: |
+          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+
+          # Get the base branch version (main for PRs, previous commit for pushes)
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }}
+            BASE_VERSION=$(git show origin/${{ github.base_ref }}:pubspec.yaml | grep '^version:' | sed 's/version: //' | tr -d ' ')
+          else
+            BASE_VERSION=$(git show HEAD~1:pubspec.yaml 2>/dev/null | grep '^version:' | sed 's/version: //' | tr -d ' ' || echo "$CURRENT_VERSION")
+          fi
+
+          echo "Base version: $BASE_VERSION"
+          echo "Current version: $CURRENT_VERSION"
+
+          # Only check CHANGELOG if version was updated
+          if [ "$CURRENT_VERSION" != "$BASE_VERSION" ]; then
+            echo "Version was updated from $BASE_VERSION to $CURRENT_VERSION"
+            if ! grep -q "## \[$CURRENT_VERSION\]" CHANGELOG.md; then
+              echo "Error: CHANGELOG.md does not contain version $CURRENT_VERSION"
+              echo "Please update CHANGELOG.md to include an entry for version $CURRENT_VERSION"
+              exit 1
+            fi
+            echo "✓ CHANGELOG.md contains version $CURRENT_VERSION"
+          else
+            echo "✓ Version unchanged, skipping CHANGELOG check"
+          fi
+
       - name: Analyze project source
         run: flutter analyze
 
