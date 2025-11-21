@@ -10,9 +10,6 @@ example/ios/.symlinks/
 example/ios/Flutter/ephemeral/
 example/android/.gradle/
 example/android/local.properties
-example/android/gradle/wrapper/gradle-wrapper.jar
-example/android/gradlew
-example/android/gradlew.bat
 example/linux/flutter/ephemeral/
 example/macos/Flutter/ephemeral/
 example/windows/flutter/ephemeral/
