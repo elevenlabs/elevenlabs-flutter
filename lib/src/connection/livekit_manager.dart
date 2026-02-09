@@ -55,7 +55,7 @@ class LiveKitManager {
 
       const roomOptions = RoomOptions(
         defaultAudioPublishOptions: AudioPublishOptions(
-          audioBitrate: AudioPreset.speech,
+          encoding: AudioEncoding.presetSpeech,
         ),
       );
 
