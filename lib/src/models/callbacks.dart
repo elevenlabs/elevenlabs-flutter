@@ -53,6 +53,9 @@ class ConversationCallbacks {
   /// Called when MCP connection status changes
   final void Function(McpConnectionStatus status)? onMcpConnectionStatus;
 
+  /// Called when the agent is about to call a server-side tool (webhook, etc.)
+  final void Function(AgentToolRequest request)? onAgentToolRequest;
+
   /// Called when an agent tool response is received
   final void Function(AgentToolResponse response)? onAgentToolResponse;
 
@@ -94,6 +97,7 @@ class ConversationCallbacks {
     this.onUnhandledClientToolCall,
     this.onMcpToolCall,
     this.onMcpConnectionStatus,
+    this.onAgentToolRequest,
     this.onAgentToolResponse,
     this.onDebug,
     this.onEndCallRequested,
