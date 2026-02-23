@@ -7,10 +7,6 @@
 
 Official Flutter SDK for [ElevenAgents](https://elevenlabs.io/docs/eleven-agents/overview). Build voice-enabled applications with real-time bidirectional audio communication powered by WebRTC via LiveKit.
 
-## SDK status
-
-This SDK is in beta - core functionality should work as expected but some edge cases might not be supported. If something is missing for your integration please open up an issue in this repo.
-
 ## Features
 
 - **Real-time Voice Communication** - Full-duplex audio streaming with low latency
