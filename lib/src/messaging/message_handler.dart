@@ -96,6 +96,11 @@ class MessageHandler {
           _handleMcpConnectionStatus(json);
           break;
 
+        case 'agent_tool_request':
+          callbacks.onDebug?.call(json);
+          _handleAgentToolRequest(json);
+          break;
+
         case 'agent_tool_response':
           callbacks.onDebug?.call(json);
           _handleAgentToolResponse(json);
@@ -249,6 +254,11 @@ class MessageHandler {
   void _handleMcpConnectionStatus(Map<String, dynamic> json) {
     final status = McpConnectionStatus.fromJson(json);
     callbacks.onMcpConnectionStatus?.call(status);
+  }
+
+  void _handleAgentToolRequest(Map<String, dynamic> json) {
+    final request = AgentToolRequest.fromJson(json);
+    callbacks.onAgentToolRequest?.call(request);
   }
 
   void _handleAgentToolResponse(Map<String, dynamic> json) {
