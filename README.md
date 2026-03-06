@@ -100,6 +100,11 @@ import 'package:flutter/material.dart';
 import 'package:elevenlabs_agents/elevenlabs_agents.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MaterialApp(home: VoiceAssistant()));
+}
+
 class VoiceAssistant extends StatefulWidget {
   const VoiceAssistant({super.key});
 
@@ -108,43 +113,36 @@ class VoiceAssistant extends StatefulWidget {
 }
 
 class _VoiceAssistantState extends State<VoiceAssistant> {
-  late ConversationClient _client;
   final _messages = <String>[];
+  late final _client = ConversationClient(
+    callbacks: ConversationCallbacks(
+      onConnect: ({required conversationId}) {
+        print('Connected with ID: $conversationId');
+      },
+      onMessage: ({required message, required source}) {
+        setState(() {
+          _messages.add('${source.name}: $message');
+        });
+      },
+      onModeChange: ({required mode}) {
+        print('Mode changed: ${mode.name}');
+      },
+      onError: (message, [context]) {
+        print('Error: $message');
+      },
+    ),
+  )..addListener(() {
+      setState(() {});
+    });
 
   @override
   void initState() {
     super.initState();
     _requestMicrophonePermission();
-    _initializeClient();
   }
 
   Future<void> _requestMicrophonePermission() async {
     await Permission.microphone.request();
-  }
-
-  void _initializeClient() {
-    _client = ConversationClient(
-      callbacks: ConversationCallbacks(
-        onConnect: ({required conversationId}) {
-          print('Connected with ID: $conversationId');
-        },
-        onMessage: ({required message, required source}) {
-          setState(() {
-            _messages.add('${source.name}: $message');
-          });
-        },
-        onModeChange: ({required mode}) {
-          print('Mode changed: ${mode.name}');
-        },
-        onError: (message, [context]) {
-          print('Error: $message');
-        },
-      ),
-    );
-
-    _client.addListener(() {
-      setState(() {}); // Rebuild on state changes
-    });
   }
 
   @override
@@ -170,73 +168,50 @@ class _VoiceAssistantState extends State<VoiceAssistant> {
 
   @override
   Widget build(BuildContext context) {
-    final isConnected = _client.status == ConversationStatus.connected;
-    final isDisconnected = _client.status == ConversationStatus.disconnected;
+    final (isConnected, isDisconnected) = (
+      _client.status == ConversationStatus.connected,
+      _client.status == ConversationStatus.disconnected,
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Voice Assistant')),
       body: Column(
         children: [
-          // Status indicator
           Container(
             padding: const EdgeInsets.all(16),
             color: isConnected ? Colors.green : Colors.grey,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  'Status: ${_client.status.name}',
-                  style: const TextStyle(color: Colors.white),
-                ),
-                if (_client.isSpeaking) ...[
-                  const SizedBox(width: 16),
-                  const Text(
-                    'Agent Speaking',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ],
+                Text('Status: ${_client.status.name}'),
+                if (isConnected && _client.isSpeaking) const Text(' - AI Agent Speaking'),
               ],
             ),
           ),
-
-          // Messages list
           Expanded(
             child: ListView.builder(
               itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(_messages[index]),
-                );
-              },
+              itemBuilder: (context, index) => ListTile(
+                title: Text(_messages[index]),
+              ),
             ),
           ),
-
-          // Controls
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: isDisconnected ? _startConversation : null,
-                        child: const Text('Start Conversation'),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: isConnected ? _endConversation : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                        ),
-                        child: const Text('End Conversation'),
-                      ),
-                    ),
-                  ],
-                ),
+                if (isDisconnected)
+                  ElevatedButton(
+                    onPressed: _startConversation,
+                    child: const Text('Start Conversation'),
+                  ),
                 if (isConnected) ...[
+                  ElevatedButton(
+                    onPressed: _endConversation,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                    ),
+                    child: const Text('End Conversation'),
+                  ),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     onPressed: () => _client.toggleMute(),
