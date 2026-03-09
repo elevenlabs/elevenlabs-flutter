@@ -220,6 +220,40 @@ class McpIntegration {
   }
 }
 
+/// Agent tool request event (fired when the agent initiates any tool call)
+class AgentToolRequest {
+  /// Name of the tool being invoked
+  final String toolName;
+
+  /// Tool call identifier
+  final String toolCallId;
+
+  /// Tool type (e.g., "client", "webhook", "system")
+  final String toolType;
+
+  /// Parameters passed to the tool
+  final Map<String, dynamic> parameters;
+
+  AgentToolRequest({
+    required this.toolName,
+    required this.toolCallId,
+    required this.toolType,
+    required this.parameters,
+  });
+
+  factory AgentToolRequest.fromJson(Map<String, dynamic> json) {
+    final agentToolRequest =
+        json['agent_tool_request'] as Map<String, dynamic>;
+    return AgentToolRequest(
+      toolName: agentToolRequest['tool_name'] as String,
+      toolCallId: agentToolRequest['tool_call_id'] as String,
+      toolType: agentToolRequest['tool_type'] as String,
+      parameters:
+          agentToolRequest['parameters'] as Map<String, dynamic>? ?? {},
+    );
+  }
+}
+
 /// Agent tool response
 class AgentToolResponse {
   /// Tool name

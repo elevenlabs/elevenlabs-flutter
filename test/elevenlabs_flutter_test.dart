@@ -340,6 +340,81 @@ void main() {
     });
   });
 
+  group('AgentToolRequest', () {
+    test('parses from JSON correctly', () {
+      final json = {
+        'type': 'agent_tool_request',
+        'agent_tool_request': {
+          'tool_name': 'fetch_weather',
+          'tool_call_id': 'call-abc-123',
+          'tool_type': 'webhook',
+        },
+      };
+
+      final request = AgentToolRequest.fromJson(json);
+      expect(request.toolName, 'fetch_weather');
+      expect(request.toolCallId, 'call-abc-123');
+      expect(request.toolType, 'webhook');
+      expect(request.parameters, isEmpty);
+    });
+
+    test('parses parameters from JSON', () {
+      final json = {
+        'type': 'agent_tool_request',
+        'agent_tool_request': {
+          'tool_name': 'lookup',
+          'tool_call_id': 'call-xyz-456',
+          'tool_type': 'client',
+          'parameters': {'query': 'hello', 'limit': 10},
+        },
+      };
+
+      final request = AgentToolRequest.fromJson(json);
+      expect(request.parameters, {'query': 'hello', 'limit': 10});
+    });
+
+    test('defaults parameters to empty map when absent', () {
+      final json = {
+        'type': 'agent_tool_request',
+        'agent_tool_request': {
+          'tool_name': 'no_params_tool',
+          'tool_call_id': 'call-111',
+          'tool_type': 'system',
+        },
+      };
+
+      final request = AgentToolRequest.fromJson(json);
+      expect(request.parameters, isEmpty);
+    });
+  });
+
+  group('ConversationCallbacks - onAgentToolRequest', () {
+    test('can be registered and accepts named parameters', () {
+      String? receivedToolName;
+      String? receivedToolCallId;
+
+      final callbacks = ConversationCallbacks(
+        onAgentToolRequest: ({required toolName, required toolCallId}) {
+          receivedToolName = toolName;
+          receivedToolCallId = toolCallId;
+        },
+      );
+
+      callbacks.onAgentToolRequest?.call(
+        toolName: 'test_tool',
+        toolCallId: 'call-999',
+      );
+
+      expect(receivedToolName, 'test_tool');
+      expect(receivedToolCallId, 'call-999');
+    });
+
+    test('is null when not provided', () {
+      const callbacks = ConversationCallbacks();
+      expect(callbacks.onAgentToolRequest, isNull);
+    });
+  });
+
   group('ClientToolResult', () {
     test('converts to JSON correctly', () {
       final successResult = ClientToolResult.success({'data': 'test'});

@@ -96,6 +96,11 @@ class MessageHandler {
           _handleMcpConnectionStatus(json);
           break;
 
+        case 'agent_tool_request':
+          callbacks.onDebug?.call(json);
+          _handleAgentToolRequest(json);
+          break;
+
         case 'agent_tool_response':
           callbacks.onDebug?.call(json);
           _handleAgentToolResponse(json);
@@ -249,6 +254,41 @@ class MessageHandler {
   void _handleMcpConnectionStatus(Map<String, dynamic> json) {
     final status = McpConnectionStatus.fromJson(json);
     callbacks.onMcpConnectionStatus?.call(status);
+  }
+
+  Future<void> _handleAgentToolRequest(Map<String, dynamic> json) async {
+    try {
+      final request = AgentToolRequest.fromJson(json);
+
+      callbacks.onAgentToolRequest?.call(
+        toolName: request.toolName,
+        toolCallId: request.toolCallId,
+      );
+
+      // Execute registered client tool if applicable
+      if (request.toolType == 'client') {
+        final tool = clientTools?[request.toolName];
+        if (tool != null) {
+          final result = await tool.execute(request.parameters);
+          if (result != null) {
+            await _sendClientToolResponse(request.toolCallId, result);
+          }
+        } else {
+          // No handler registered — synthesise a ClientToolCall so the
+          // existing unhandled callback can be reused
+          callbacks.onUnhandledClientToolCall?.call(
+            ClientToolCall(
+              toolCallId: request.toolCallId,
+              toolName: request.toolName,
+              parameters: request.parameters,
+              eventId: 0,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      callbacks.onError?.call('Agent tool request handling failed', e);
+    }
   }
 
   void _handleAgentToolResponse(Map<String, dynamic> json) {
