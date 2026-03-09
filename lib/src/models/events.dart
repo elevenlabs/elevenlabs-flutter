@@ -242,14 +242,12 @@ class AgentToolRequest {
   });
 
   factory AgentToolRequest.fromJson(Map<String, dynamic> json) {
-    final agentToolRequest =
-        json['agent_tool_request'] as Map<String, dynamic>;
+    final agentToolRequest = json['agent_tool_request'] as Map<String, dynamic>;
     return AgentToolRequest(
       toolName: agentToolRequest['tool_name'] as String,
       toolCallId: agentToolRequest['tool_call_id'] as String,
       toolType: agentToolRequest['tool_type'] as String,
-      parameters:
-          agentToolRequest['parameters'] as Map<String, dynamic>? ?? {},
+      parameters: agentToolRequest['parameters'] as Map<String, dynamic>? ?? {},
     );
   }
 }
