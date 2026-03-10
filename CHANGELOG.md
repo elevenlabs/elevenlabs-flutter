@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-10
+
+### Added
+
+- `onAgentToolRequest` callback on `ConversationCallbacks`, fired whenever the agent initiates a tool call. Receives `toolName` and `toolCallId` as named parameters, enabling apps to display a loading/thinking indicator during tool execution.
+- `AgentToolRequest` event model with fields `toolName`, `toolCallId`, `toolType`, and `parameters`.
+- Handling for the `agent_tool_request` protocol event (previously silently dropped). For `tool_type: "client"` the SDK now executes the registered `ClientTool` and returns the result automatically, matching the behaviour introduced in Android SDK v0.7.1.
+
 ## [0.3.1] - 2026-02-19
 
 ### Changed
@@ -59,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - iOS 13.0+
 - Android API 21+
 
+[0.4.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.4.0
 [0.3.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.3.1
 [0.3.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.3.0
 [0.2.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.2.0
