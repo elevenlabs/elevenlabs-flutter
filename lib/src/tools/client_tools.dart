@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Interface for client-side tool implementations
 abstract class ClientTool {
   /// Executes the tool with the given parameters
@@ -27,6 +29,9 @@ class ClientToolResult {
   /// Creates a failure result
   factory ClientToolResult.failure(String error) =>
       ClientToolResult._(success: false, error: error);
+  
+  /// Serializa el resultado a string JSON
+  String toRawJson() => json.encode(toJson());
 
   /// Converts to JSON for sending to the agent
   Map<String, dynamic> toJson() {
