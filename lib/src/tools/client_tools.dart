@@ -31,7 +31,7 @@ class ClientToolResult {
       ClientToolResult._(success: false, error: error);
   
   /// Serializa el resultado a string JSON
-  String toRawJson() => json.encode(toJson());
+  String toJsonString() => json.encode(toJson());
 
   /// Converts to JSON for sending to the agent
   Map<String, dynamic> toJson() {

@@ -242,7 +242,7 @@ class MessageHandler {
     await liveKit.sendMessage({
       'type': 'client_tool_result',
       'tool_call_id': toolCallId,
-      'result': result.toRawJson(),
+      'result': result.toJsonString(),
       'is_error': !result.success,
     });
   }
