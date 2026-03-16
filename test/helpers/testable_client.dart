@@ -35,6 +35,7 @@ class TestableConversationClient extends ChangeNotifier {
     String? agentId,
     String? conversationToken,
     String? userId,
+    String? environment,
     ConversationOverrides? overrides,
     Map<String, dynamic>? customLlmExtraBody,
     Map<String, dynamic>? dynamicVariables,

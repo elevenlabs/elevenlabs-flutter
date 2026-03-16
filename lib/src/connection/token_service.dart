@@ -10,10 +10,18 @@ class TokenService {
       : apiEndpoint = apiEndpoint ?? 'https://api.elevenlabs.io';
 
   /// Fetches a LiveKit token for public agents
-  Future<({String token})> fetchToken({required String agentId}) async {
+  Future<({String token})> fetchToken({
+    required String agentId,
+    String? environment,
+  }) async {
+    final queryParams = {'agent_id': agentId};
+    if (environment != null) {
+      queryParams['environment'] = environment;
+    }
+
     final uri = Uri.parse(
-      '$apiEndpoint/v1/convai/conversation/token?agent_id=$agentId',
-    );
+      '$apiEndpoint/v1/convai/conversation/token',
+    ).replace(queryParameters: queryParams);
 
     try {
       final response = await http.get(uri);

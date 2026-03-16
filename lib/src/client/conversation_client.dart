@@ -130,6 +130,7 @@ class ConversationClient extends ChangeNotifier {
     String? agentId,
     String? conversationToken,
     String? userId,
+    String? environment,
     ConversationOverrides? overrides,
     Map<String, dynamic>? customLlmExtraBody,
     Map<String, dynamic>? dynamicVariables,
@@ -159,7 +160,10 @@ class ConversationClient extends ChangeNotifier {
         token = conversationToken;
       } else if (agentId != null) {
         // Public agent - fetch token
-        final result = await _tokenService.fetchToken(agentId: agentId);
+        final result = await _tokenService.fetchToken(
+          agentId: agentId,
+          environment: environment,
+        );
         token = result.token;
       } else {
         throw ArgumentError(
