@@ -30,7 +30,7 @@ class ClientToolResult {
   factory ClientToolResult.failure(String error) =>
       ClientToolResult._(success: false, error: error);
   
-  /// Serializa el resultado a string JSON
+  /// Serialize the result to a JSON string.
   String toJsonString() => json.encode(toJson());
 
   /// Converts to JSON for sending to the agent
