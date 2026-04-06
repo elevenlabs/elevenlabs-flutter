@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import '../models/callbacks.dart';
 import '../models/conversation_status.dart';
 import '../models/events.dart';
@@ -239,10 +240,18 @@ class MessageHandler {
     String toolCallId,
     ClientToolResult result,
   ) async {
+    final String resultData;
+    if (result.success) {
+      final d = result.data;
+      resultData = d is String ? d : jsonEncode(d);
+    } else {
+      resultData = result.error ?? 'Unknown error';
+    }
     await liveKit.sendMessage({
       'type': 'client_tool_result',
       'tool_call_id': toolCallId,
-      'result': result.toJson(),
+      'result': resultData,
+      'is_error': !result.success,
     });
   }
 
