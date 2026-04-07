@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:elevenlabs_agents/elevenlabs_agents.dart';
@@ -119,7 +120,12 @@ void main() {
       final sent = fakeManager.sentMessages.first;
       expect(sent['type'], 'client_tool_result');
       expect(sent['tool_call_id'], 'call-echo-1');
-      expect(sent['result']['success'], true);
+      expect(sent['is_error'], false);
+      expect(sent['result'], isA<String>());
+      expect(
+        jsonDecode(sent['result'] as String),
+        {'echo': 'hello'},
+      );
 
       handler.dispose();
       fakeManager.close();
