@@ -722,6 +722,16 @@ flutter test --coverage
 | Android  | Yes       | API 21 (Android 5.0) |
 | iOS      | Yes       | iOS 13.0 |
 
+## Releasing
+
+To release a new version of the SDK, use the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) release command:
+
+```bash
+claude /release <version>
+```
+
+This will update version strings, CHANGELOG, run checks, open a PR, and (after merge) tag the release to trigger publishing to [pub.dev](https://pub.dev/packages/elevenlabs_agents).
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
