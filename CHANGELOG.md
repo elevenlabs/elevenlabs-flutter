@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-04-13
+
+Re-release of 0.5.0 with the version correctly bumped in package source files.
+
+### Fixed
+
+- Fixed override serialization to use `toJson()` instead of hand-built maps, ensuring all fields (e.g. `modelId`, `stability`, `similarityBoost`, `maxTokens`) are included.
+
+## [0.5.0] - 2026-04-09 [YANKED]
+
+> **Note:** This version was never published to pub.dev because the version in `pubspec.yaml` and `lib/version.dart` was not updated before tagging.
+
+### Added
+
+- Optional `environment` parameter for `startSession()` to specify the target environment (e.g. `"staging"`). Defaults to `"production"` server-side when not specified.
+
+### Fixed
+
+- Fixed client tool result message format to match backend expectations (`type`, `tool_call_id`, `result`, `is_error` fields).
+
 ## [0.4.0] - 2026-03-10
 
 ### Added
@@ -67,6 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - iOS 13.0+
 - Android API 21+
 
+[0.5.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.5.1
+[0.5.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.5.0
 [0.4.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.4.0
 [0.3.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.3.1
 [0.3.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.3.0
