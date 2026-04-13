@@ -5,13 +5,10 @@ Map<String, dynamic> constructOverrides(ConversationConfig config) {
   final overrides = config.overrides;
 
   final conversationConfigOverride = <String, dynamic>{
-    'agent': {
-      'first_message': overrides?.agent?.firstMessage,
-      'language': overrides?.agent?.language,
-      'prompt': overrides?.agent?.prompt,
-    },
-    'conversation': {'text_only': overrides?.conversation?.textOnly},
-    'tts': {'voice_id': overrides?.tts?.voiceId},
+    if (overrides?.agent != null) 'agent': overrides!.agent!.toJson(),
+    if (overrides?.conversation != null)
+      'conversation': overrides!.conversation!.toJson(),
+    if (overrides?.tts != null) 'tts': overrides!.tts!.toJson(),
   };
 
   final overridesEvent = <String, dynamic>{
