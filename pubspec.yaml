@@ -6,12 +6,12 @@ repository: https://github.com/elevenlabs/elevenlabs-flutter
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
-  flutter: ">=3.10.0"
+  flutter: ">=3.38.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  livekit_client: ^2.6.0
+  livekit_client: ^2.7.0
   http: ^1.2.0
 
 dev_dependencies:
