@@ -18,14 +18,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/flutter
-          key: ${{ runner.os }}-flutter-3.35.7
+          key: ${{ runner.os }}-flutter-3.41.7
           restore-keys: |
             ${{ runner.os }}-flutter-
 
       - name: Install Flutter
         run: |
           if [ ! -d "/opt/flutter" ]; then
-            git clone https://github.com/flutter/flutter.git -b 3.35.7 --depth 1 /opt/flutter
+            git clone https://github.com/flutter/flutter.git -b 3.41.7 --depth 1 /opt/flutter
           fi
           echo "/opt/flutter/bin" >> $GITHUB_PATH
           echo "/opt/flutter/bin/cache/dart-sdk/bin" >> $GITHUB_PATH
