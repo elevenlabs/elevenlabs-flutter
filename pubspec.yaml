@@ -1,6 +1,6 @@
 name: elevenlabs_agents
 description: "Flutter SDK for ElevenLabs Agent Platform. Build conversational AI applications with real-time audio communication."
-version: 0.5.1
+version: 0.6.0
 homepage: https://elevenlabs.io
 repository: https://github.com/elevenlabs/elevenlabs-flutter
 

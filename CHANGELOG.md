@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-21
+
+### Changed
+
+- Bumped `livekit_client` dependency to `^2.7.0` (fixes build failures on Android and iOS)
+- Requires Flutter `>=3.38.0` due to transitive `meta ^1.17.0` requirement
+
 ## [0.5.1] - 2026-04-13
 
 Re-release of 0.5.0 with the version correctly bumped in package source files.
@@ -87,6 +94,7 @@ Re-release of 0.5.0 with the version correctly bumped in package source files.
 - iOS 13.0+
 - Android API 21+
 
+[0.6.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.6.0
 [0.5.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.5.1
 [0.5.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.5.0
 [0.4.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.4.0
