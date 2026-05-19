@@ -35,6 +35,8 @@ class ConversationClient extends ChangeNotifier {
 
   StreamSubscription<livekit.ConnectionState>? _stateSubscription;
   StreamSubscription<bool>? _speakingSubscription;
+  StreamSubscription<double>? _audioLevelSubscription;
+  StreamSubscription<double>? _userAudioLevelSubscription;
   StreamSubscription<String>? _disconnectSubscription;
 
   /// Current connection status
@@ -188,6 +190,18 @@ class ConversationClient extends ChangeNotifier {
         _isSpeaking = isSpeaking;
         notifyListeners();
         _callbacks?.onModeChange?.call(mode: _mode);
+      });
+
+      // Listen to agent audio level (0-1) for real-time visualizations
+      _audioLevelSubscription =
+          _liveKitManager.agentAudioLevelStream.listen((level) {
+        _callbacks?.onAgentAudioLevel?.call(audioLevel: level);
+      });
+
+      // Listen to local user audio level (0-1) for user spectrum
+      _userAudioLevelSubscription =
+          _liveKitManager.userAudioLevelStream.listen((level) {
+        _callbacks?.onUserAudioLevel?.call(audioLevel: level);
       });
 
       // Start message handling
@@ -356,6 +370,10 @@ class ConversationClient extends ChangeNotifier {
 
     await _speakingSubscription?.cancel();
     _speakingSubscription = null;
+    await _audioLevelSubscription?.cancel();
+    _audioLevelSubscription = null;
+    await _userAudioLevelSubscription?.cancel();
+    _userAudioLevelSubscription = null;
 
     await _disconnectSubscription?.cancel();
     _disconnectSubscription = null;

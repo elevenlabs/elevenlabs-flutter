@@ -40,6 +40,25 @@ class LiveKitManager {
   /// Stream that emits when agent starts/stops speaking
   Stream<bool> get speakingStateStream => _speakingStateController.stream;
 
+  /// Stream controller for agent audio level (0-1, real-time from LiveKit)
+  final _agentAudioLevelController = StreamController<double>.broadcast();
+
+  /// Stream of agent audio level (0-1). Emits whenever ActiveSpeakers changes,
+  /// reflecting the real loudness of the remote agent participant.
+  Stream<double> get agentAudioLevelStream =>
+      _agentAudioLevelController.stream;
+
+  /// Stream controller for the local user audio level (0-1)
+  final _userAudioLevelController = StreamController<double>.broadcast();
+
+  /// Stream of the local user audio level (0-1), sampled every 50ms from
+  /// `room.localParticipant.audioLevel`. Useful for "you are speaking"
+  /// visualizations.
+  Stream<double> get userAudioLevelStream => _userAudioLevelController.stream;
+
+  /// Polling timer for local participant audio level
+  Timer? _userLevelPollTimer;
+
   /// Current room instance
   Room? get room => _room;
 
@@ -115,15 +134,40 @@ class LiveKitManager {
           }
         })
         ..on<ActiveSpeakersChangedEvent>((event) {
-          // Check if agent is in the active speakers list
-          final agentIsSpeaking = event.speakers.any(
-            (speaker) => speaker.identity.startsWith('agent-'),
-          );
+          // Find the agent in active speakers
+          Participant? agentSpeaker;
+          for (final s in event.speakers) {
+            if (s.identity.startsWith('agent-')) {
+              agentSpeaker = s;
+              break;
+            }
+          }
+          final agentIsSpeaking = agentSpeaker != null;
           _handleSpeakingStateChange(agentIsSpeaking);
+
+          // Emit real-time audio level (0 when agent isn't speaking)
+          final level = agentSpeaker?.audioLevel ?? 0.0;
+          if (!_agentAudioLevelController.isClosed) {
+            _agentAudioLevelController.add(level);
+          }
         });
 
       // Connect to LiveKit server
       await _room!.connect(serverUrl, token);
+
+      // Poll local participant audio level for user spectrum visualizations.
+      // LiveKit updates `audioLevel` on the participant via internal events,
+      // but does not expose a Stream<double>, so we sample at 50ms (20Hz).
+      _userLevelPollTimer?.cancel();
+      _userLevelPollTimer =
+          Timer.periodic(const Duration(milliseconds: 50), (_) {
+        final lp = _room?.localParticipant;
+        if (lp == null) return;
+        final level = lp.audioLevel;
+        if (!_userAudioLevelController.isClosed) {
+          _userAudioLevelController.add(level);
+        }
+      });
 
       // Enable speakerphone on Android
       try {
@@ -210,6 +254,8 @@ class LiveKitManager {
     // Cancel any pending debounce timer
     _speakingDebounceTimer?.cancel();
     _speakingDebounceTimer = null;
+    _userLevelPollTimer?.cancel();
+    _userLevelPollTimer = null;
     _lastSpeakingState = false;
 
     // Dispose of event listener first
@@ -251,6 +297,8 @@ class LiveKitManager {
     await _disconnectStreamController.close();
     await _roomReadyController.close();
     await _speakingStateController.close();
+    await _agentAudioLevelController.close();
+    await _userAudioLevelController.close();
     await disconnect();
   }
 }
