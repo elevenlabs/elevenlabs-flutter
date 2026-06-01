@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-06-01
+
+### Fixed
+
+- Hardened LiveKit session teardown to prevent uncaught stream errors: `_safeAdd`/`_safeAddError` helpers guard all controller emissions, `dispose()` now disconnects before closing controllers, and `roomReadyStream.first` has an error handler to suppress the benign "Bad state: No element" error when a session is torn down before the room is ready.
+
 ## [0.6.0] - 2026-04-21
 
 ### Changed
@@ -94,6 +100,7 @@ Re-release of 0.5.0 with the version correctly bumped in package source files.
 - iOS 13.0+
 - Android API 21+
 
+[0.6.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.6.1
 [0.6.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.6.0
 [0.5.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.5.1
 [0.5.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.5.0
