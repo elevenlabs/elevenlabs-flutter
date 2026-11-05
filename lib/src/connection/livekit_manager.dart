@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 /// Manages LiveKit Room connection and audio tracks
@@ -42,6 +43,16 @@ class LiveKitManager {
 
   /// Current room instance
   Room? get room => _room;
+
+  /// Publishes the microphone while LiveKit is completing its connection.
+  ///
+  /// This prevents a connected, billable room from waiting on a separate
+  /// post-connect microphone acquisition step. Older servers that do not
+  /// support fast connect still use the compatibility fallback in [connect].
+  @visibleForTesting
+  static FastConnectOptions get fastConnectOptions => FastConnectOptions(
+        microphone: const TrackOption(enabled: true),
+      );
 
   /// Whether the microphone is muted
   bool get isMuted =>
@@ -144,12 +155,21 @@ class LiveKitManager {
           _handleSpeakingStateChange(agentIsSpeaking);
         });
 
-      // Connect to LiveKit server
-      await _room!.connect(serverUrl, token);
+      // Ask LiveKit to acquire and publish the microphone during its connect
+      // flow. On supported servers this completes before connect() resolves,
+      // instead of opening a billable room and then waiting indefinitely for a
+      // separate capture-device operation.
+      await _room!.connect(
+        serverUrl,
+        token,
+        fastConnectOptions: fastConnectOptions,
+      );
 
       // Enable speakerphone on Android
       try {
-        await Hardware.instance.setSpeakerphoneOn(true);
+        await Hardware.instance
+            .setSpeakerphoneOn(true)
+            .timeout(const Duration(seconds: 3));
       } catch (e) {
         _safeAddError(
           _dataStreamController,
@@ -157,15 +177,20 @@ class LiveKitManager {
         );
       }
 
-      // Enable microphone (LiveKit handles track creation automatically)
-      await _room!.localParticipant?.setMicrophoneEnabled(
-        true,
-        audioCaptureOptions: const AudioCaptureOptions(
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        ),
-      );
+      // Fast connect is available on current LiveKit servers. Retain the
+      // former path as a compatibility fallback for older protocol versions.
+      final localParticipant = _room!.localParticipant;
+      if (localParticipant != null &&
+          !localParticipant.isMicrophoneEnabled()) {
+        await localParticipant.setMicrophoneEnabled(
+          true,
+          audioCaptureOptions: const AudioCaptureOptions(
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          ),
+        );
+      }
 
       // Emit room ready event - connection is fully established and ready for messages
       _safeAdd(_roomReadyController, null);
