@@ -60,16 +60,32 @@ class ConversationClient extends ChangeNotifier {
     String? websocketUrl,
     ConversationCallbacks? callbacks,
     Map<String, ClientTool>? clientTools,
+  }) : this.withLiveKitManager(
+          apiEndpoint: apiEndpoint,
+          websocketUrl: websocketUrl,
+          callbacks: callbacks,
+          clientTools: clientTools,
+          liveKitManager: LiveKitManager(),
+        );
+
+  /// Creates a conversation client on top of the given [liveKitManager]
+  @visibleForTesting
+  ConversationClient.withLiveKitManager({
+    String? apiEndpoint,
+    String? websocketUrl,
+    ConversationCallbacks? callbacks,
+    Map<String, ClientTool>? clientTools,
+    required LiveKitManager liveKitManager,
   })  : _apiEndpoint = apiEndpoint,
         _websocketUrl = websocketUrl,
         _callbacks = callbacks,
         _clientTools = clientTools {
-    _initializeServices();
+    _initializeServices(liveKitManager);
   }
 
-  void _initializeServices() {
+  void _initializeServices(LiveKitManager liveKitManager) {
     _tokenService = TokenService(apiEndpoint: _apiEndpoint);
-    _liveKitManager = LiveKitManager();
+    _liveKitManager = liveKitManager;
     _messageHandler = MessageHandler(
       callbacks: _enhancedCallbacks,
       liveKit: _liveKitManager,
@@ -223,7 +239,13 @@ class ConversationClient extends ChangeNotifier {
   }
 
   /// Ends the current conversation session
-  Future<void> endSession() async {
+  Future<void> endSession() => _endSession('user');
+
+  /// Tears the session down and reports its end once, with [reason]
+  ///
+  /// The status moves to disconnecting before the first await, so an end
+  /// reported while another is in progress is dropped.
+  Future<void> _endSession(String reason) async {
     if (_status == ConversationStatus.disconnected ||
         _status == ConversationStatus.disconnecting) {
       return;
@@ -232,7 +254,7 @@ class ConversationClient extends ChangeNotifier {
     try {
       _setStatus(ConversationStatus.disconnecting);
       await _cleanup();
-      _handleDisconnection('user');
+      _handleDisconnection(reason);
     } catch (e) {
       _callbacks?.onError?.call('Error ending session', e);
       _setStatus(ConversationStatus.disconnected);

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 /// Manages LiveKit Room connection and audio tracks
@@ -78,71 +79,7 @@ class LiveKitManager {
         ),
       );
 
-      // Create room
-      _room = Room(roomOptions: roomOptions);
-
-      // Set up specific event listeners
-      _eventsListener = _room!.createListener();
-
-      _eventsListener!
-        ..on<RoomConnectedEvent>((event) {
-          _safeAdd(_stateStreamController, ConnectionState.connected);
-        })
-        ..on<RoomDisconnectedEvent>((event) {
-          _safeAdd(_stateStreamController, ConnectionState.disconnected);
-          _safeAdd(_disconnectStreamController, 'error');
-        })
-        ..on<RoomReconnectingEvent>((event) {
-          _safeAdd(_stateStreamController, ConnectionState.reconnecting);
-        })
-        ..on<RoomReconnectedEvent>((event) {
-          _safeAdd(_stateStreamController, ConnectionState.connected);
-        })
-        ..on<DataReceivedEvent>((event) {
-          // Handle incoming data messages
-          try {
-            final data = utf8.decode(event.data);
-            final message = jsonDecode(data) as Map<String, dynamic>;
-            _safeAdd(_dataStreamController, message);
-          } on FormatException catch (e) {
-            _safeAddError(
-              _dataStreamController,
-              Exception('Failed to decode message data: ${e.message}'),
-            );
-          } catch (e) {
-            _safeAddError(
-              _dataStreamController,
-              Exception('Error processing data message: $e'),
-            );
-          }
-        })
-        ..on<ParticipantDisconnectedEvent>((event) {
-          // If the agent disconnects, we should end the session
-          if (event.participant.identity.startsWith('agent-')) {
-            _safeAdd(_stateStreamController, ConnectionState.disconnected);
-            _safeAdd(_disconnectStreamController, 'agent');
-          }
-        })
-        ..on<AudioPlaybackStatusChanged>((event) async {
-          // Handle audio playback issues (especially for iOS)
-          if (!_room!.canPlaybackAudio) {
-            try {
-              await _room!.startAudio();
-            } catch (e) {
-              _safeAddError(
-                _dataStreamController,
-                Exception('Failed to start audio playback: $e'),
-              );
-            }
-          }
-        })
-        ..on<ActiveSpeakersChangedEvent>((event) {
-          // Check if agent is in the active speakers list
-          final agentIsSpeaking = event.speakers.any(
-            (speaker) => speaker.identity.startsWith('agent-'),
-          );
-          _handleSpeakingStateChange(agentIsSpeaking);
-        });
+      listenToRoom(Room(roomOptions: roomOptions));
 
       // Connect to LiveKit server
       await _room!.connect(serverUrl, token);
@@ -176,6 +113,75 @@ class LiveKitManager {
       );
       rethrow;
     }
+  }
+
+  /// Makes [room] the current room and forwards its events to the streams
+  @visibleForTesting
+  void listenToRoom(Room room) {
+    _room = room;
+
+    // Set up specific event listeners
+    _eventsListener = room.createListener();
+
+    _eventsListener!
+      ..on<RoomConnectedEvent>((event) {
+        _safeAdd(_stateStreamController, ConnectionState.connected);
+      })
+      ..on<RoomDisconnectedEvent>((event) {
+        _safeAdd(_stateStreamController, ConnectionState.disconnected);
+        _safeAdd(_disconnectStreamController, 'error');
+      })
+      ..on<RoomReconnectingEvent>((event) {
+        _safeAdd(_stateStreamController, ConnectionState.reconnecting);
+      })
+      ..on<RoomReconnectedEvent>((event) {
+        _safeAdd(_stateStreamController, ConnectionState.connected);
+      })
+      ..on<DataReceivedEvent>((event) {
+        // Handle incoming data messages
+        try {
+          final data = utf8.decode(event.data);
+          final message = jsonDecode(data) as Map<String, dynamic>;
+          _safeAdd(_dataStreamController, message);
+        } on FormatException catch (e) {
+          _safeAddError(
+            _dataStreamController,
+            Exception('Failed to decode message data: ${e.message}'),
+          );
+        } catch (e) {
+          _safeAddError(
+            _dataStreamController,
+            Exception('Error processing data message: $e'),
+          );
+        }
+      })
+      ..on<ParticipantDisconnectedEvent>((event) {
+        // If the agent disconnects, we should end the session
+        if (event.participant.identity.startsWith('agent-')) {
+          _safeAdd(_stateStreamController, ConnectionState.disconnected);
+          _safeAdd(_disconnectStreamController, 'agent');
+        }
+      })
+      ..on<AudioPlaybackStatusChanged>((event) async {
+        // Handle audio playback issues (especially for iOS)
+        if (!_room!.canPlaybackAudio) {
+          try {
+            await _room!.startAudio();
+          } catch (e) {
+            _safeAddError(
+              _dataStreamController,
+              Exception('Failed to start audio playback: $e'),
+            );
+          }
+        }
+      })
+      ..on<ActiveSpeakersChangedEvent>((event) {
+        // Check if agent is in the active speakers list
+        final agentIsSpeaking = event.speakers.any(
+          (speaker) => speaker.identity.startsWith('agent-'),
+        );
+        _handleSpeakingStateChange(agentIsSpeaking);
+      });
   }
 
   /// Sends a data message to the room
