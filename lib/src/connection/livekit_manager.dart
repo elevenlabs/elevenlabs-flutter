@@ -149,7 +149,7 @@ class LiveKitManager {
 
       // Enable speakerphone on Android
       try {
-        await Hardware.instance.setSpeakerphoneOn(true);
+        await AudioManager.instance.setSpeakerOutputPreferred(true);
       } catch (e) {
         _safeAddError(
           _dataStreamController,
