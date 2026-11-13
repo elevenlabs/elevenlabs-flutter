@@ -116,6 +116,35 @@ void main() {
       expect(client.status, ConversationStatus.connected);
     });
 
+    test('notifies once when the agent leaves and the room then closes',
+        () async {
+      liveKit.emitDisconnect('agent');
+      liveKit.emitDisconnect('error');
+      await _settle();
+
+      expect(reasons, ['agent']);
+      expect(client.status, ConversationStatus.disconnected);
+    });
+
+    test('notifies once when the room fails and the agent then leaves',
+        () async {
+      liveKit.emitDisconnect('error');
+      liveKit.emitDisconnect('agent');
+      await _settle();
+
+      expect(reasons, ['error']);
+      expect(client.status, ConversationStatus.disconnected);
+    });
+
+    test('tears the room down when the agent leaves', () async {
+      final callsBefore = liveKit.disconnectCalls;
+
+      liveKit.emitDisconnect('agent');
+      await _settle();
+
+      expect(liveKit.disconnectCalls, callsBefore + 1);
+    });
+
     test('does not notify again when endSession follows a server end',
         () async {
       liveKit.emitDisconnect('agent');
