@@ -10,6 +10,10 @@ class LiveKitManager {
   Timer? _speakingDebounceTimer;
   bool _lastSpeakingState = false;
 
+  /// Whether LiveKit is running a full reconnect. It removes every remote
+  /// participant when one starts, so the agent leaving then is not an end.
+  bool _reconnecting = false;
+
   /// Stream controller for incoming data messages
   final _dataStreamController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -119,6 +123,7 @@ class LiveKitManager {
   @visibleForTesting
   void listenToRoom(Room room) {
     _room = room;
+    _reconnecting = false;
 
     // Set up specific event listeners
     _eventsListener = room.createListener();
@@ -132,9 +137,11 @@ class LiveKitManager {
         _safeAdd(_disconnectStreamController, 'error');
       })
       ..on<RoomReconnectingEvent>((event) {
+        _reconnecting = true;
         _safeAdd(_stateStreamController, ConnectionState.reconnecting);
       })
       ..on<RoomReconnectedEvent>((event) {
+        _reconnecting = false;
         _safeAdd(_stateStreamController, ConnectionState.connected);
       })
       ..on<DataReceivedEvent>((event) {
@@ -156,8 +163,9 @@ class LiveKitManager {
         }
       })
       ..on<ParticipantDisconnectedEvent>((event) {
-        // If the agent disconnects, we should end the session
-        if (event.participant.identity.startsWith('agent-')) {
+        // If the agent disconnects, we should end the session. If the room
+        // then fails to reconnect, RoomDisconnectedEvent reports the error.
+        if (!_reconnecting && event.participant.identity.startsWith('agent-')) {
           _safeAdd(_stateStreamController, ConnectionState.disconnected);
           _safeAdd(_disconnectStreamController, 'agent');
         }
