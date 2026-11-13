@@ -127,7 +127,7 @@ class ConversationClient extends ChangeNotifier {
       onDebug: callbacks?.onDebug,
       onEndCallRequested: () {
         // Agent requested to end the call - trigger session end
-        endSession();
+        _endSession('agent');
         callbacks?.onEndCallRequested?.call();
       },
       onTentativeUserTranscript: callbacks?.onTentativeUserTranscript,

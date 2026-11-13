@@ -204,7 +204,9 @@ class ClientOverrides {
 
 /// Details about a disconnection event
 class DisconnectionDetails {
-  /// Reason for disconnection
+  /// Reason for disconnection: 'user' when the application called
+  /// endSession, 'agent' when the agent left the room or ended the call, or
+  /// 'error' when the room disconnected
   final String reason;
 
   /// Optional error code

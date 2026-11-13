@@ -84,15 +84,18 @@ void main() {
   group('ConversationClient - session end', () {
     late _FakeLiveKitManager liveKit;
     late List<String> reasons;
+    late bool endCallRequested;
     late ConversationClient client;
 
     setUp(() async {
       liveKit = _FakeLiveKitManager();
       reasons = [];
+      endCallRequested = false;
       client = ConversationClient.withLiveKitManager(
         liveKitManager: liveKit,
         callbacks: ConversationCallbacks(
           onDisconnect: (details) => reasons.add(details.reason),
+          onEndCallRequested: () => endCallRequested = true,
         ),
       );
       await client.startSession(conversationToken: 'token');
@@ -105,6 +108,15 @@ void main() {
       await client.endSession();
 
       expect(reasons, ['user']);
+      expect(client.status, ConversationStatus.disconnected);
+    });
+
+    test('reports an agent end_call as ended by the agent', () async {
+      liveKit.injectMessage(_agentToolResponse('end_call'));
+      await _settle();
+
+      expect(reasons, ['agent']);
+      expect(endCallRequested, isTrue);
       expect(client.status, ConversationStatus.disconnected);
     });
 
@@ -134,6 +146,15 @@ void main() {
 
       expect(reasons, ['error']);
       expect(client.status, ConversationStatus.disconnected);
+    });
+
+    test('notifies once when an end_call is followed by the room closing',
+        () async {
+      liveKit.injectMessage(_agentToolResponse('end_call'));
+      liveKit.emitDisconnect('error');
+      await _settle();
+
+      expect(reasons, ['agent']);
     });
 
     test('tears the room down when the agent leaves', () async {
