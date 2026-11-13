@@ -213,6 +213,28 @@ void main() {
       expect(reasons, isEmpty);
     });
 
+    test('reports a room that fails to reconnect as an error, not the agent',
+        () async {
+      // A full reconnect removes every remote participant, the agent included,
+      // before LiveKit knows whether the room comes back.
+      _emit(room, const livekit.RoomReconnectingEvent());
+      _emit(
+        room,
+        livekit.ParticipantDisconnectedEvent(
+          participant: _FakeRemoteParticipant('agent-1'),
+        ),
+      );
+      _emit(
+        room,
+        livekit.RoomDisconnectedEvent(
+          reason: livekit.DisconnectReason.reconnectAttemptsExceeded,
+        ),
+      );
+      await _settle();
+
+      expect(reasons, ['error']);
+    });
+
     test('reports the agent leaving after the room has reconnected', () async {
       _emit(room, const livekit.RoomReconnectingEvent());
       _emit(room, const livekit.RoomReconnectedEvent());
