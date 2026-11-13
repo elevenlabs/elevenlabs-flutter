@@ -191,9 +191,7 @@ class ConversationClient extends ChangeNotifier {
 
       // Listen to disconnect events with reasons
       _disconnectSubscription =
-          _liveKitManager.disconnectStream.listen((reason) {
-        _handleDisconnection(reason);
-      });
+          _liveKitManager.disconnectStream.listen(_endSession);
 
       // Listen to agent speaking state from LiveKit
       _speakingSubscription = _liveKitManager.speakingStateStream.listen((
