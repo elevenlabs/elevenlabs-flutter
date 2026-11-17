@@ -16,6 +16,11 @@ class MessageHandler {
 
   int _currentEventId = 0;
 
+  /// Calls answered with an error because no tool was registered for them.
+  /// The agent can announce one call as both an agent_tool_request and a
+  /// client_tool_call, and it must get a single result.
+  final Set<String> _unhandledToolCallIds = {};
+
   /// Current event ID for feedback tracking
   int get currentEventId => _currentEventId;
 
@@ -27,6 +32,7 @@ class MessageHandler {
 
   /// Starts listening to data messages
   void startListening() {
+    _unhandledToolCallIds.clear();
     _dataSubscription = liveKit.dataStream.listen(
       _processIncomingMessage,
       onError: (error) {
@@ -229,11 +235,24 @@ class MessageHandler {
         }
       } else {
         // No handler registered for this tool
+        await _sendUnhandledToolCallError(
+            toolCall.toolCallId, toolCall.toolName);
         callbacks.onUnhandledClientToolCall?.call(toolCall);
       }
     } catch (e) {
       callbacks.onError?.call('Client tool execution failed', e);
     }
+  }
+
+  Future<void> _sendUnhandledToolCallError(
+    String toolCallId,
+    String toolName,
+  ) async {
+    if (!_unhandledToolCallIds.add(toolCallId)) return;
+    await _sendClientToolResponse(
+      toolCallId,
+      ClientToolResult.failure("Tool '$toolName' is not registered"),
+    );
   }
 
   Future<void> _sendClientToolResponse(
@@ -283,6 +302,10 @@ class MessageHandler {
             await _sendClientToolResponse(request.toolCallId, result);
           }
         } else {
+          await _sendUnhandledToolCallError(
+            request.toolCallId,
+            request.toolName,
+          );
           // No handler registered — synthesise a ClientToolCall so the
           // existing unhandled callback can be reused
           callbacks.onUnhandledClientToolCall?.call(

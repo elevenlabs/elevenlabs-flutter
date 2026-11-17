@@ -197,6 +197,14 @@ void main() {
       expect(unhandled!.toolName, 'missing_tool');
       expect(unhandled!.toolCallId, 'call-miss-1');
       expect(unhandled!.parameters, {'key': 'value'});
+      expect(fakeManager.sentMessages, [
+        {
+          'type': 'client_tool_result',
+          'tool_call_id': 'call-miss-1',
+          'result': "Tool 'missing_tool' is not registered",
+          'is_error': true,
+        },
+      ]);
 
       handler.dispose();
       fakeManager.close();
@@ -224,6 +232,91 @@ void main() {
       await Future.delayed(Duration.zero);
 
       expect(fakeManager.sentMessages, isEmpty);
+
+      handler.dispose();
+      fakeManager.close();
+    });
+  });
+
+  group('MessageHandler - client_tool_call (no tool registered)', () {
+    Map<String, dynamic> clientToolCall(String toolCallId) => {
+          'type': 'client_tool_call',
+          'client_tool_call': {
+            'tool_name': 'missing_tool',
+            'tool_call_id': toolCallId,
+            'parameters': {'key': 'value'},
+            'event_id': 7,
+          },
+        };
+
+    Map<String, dynamic> errorResult(String toolCallId) => {
+          'type': 'client_tool_result',
+          'tool_call_id': toolCallId,
+          'result': "Tool 'missing_tool' is not registered",
+          'is_error': true,
+        };
+
+    test('sends an error result', () async {
+      final fakeManager = _FakeLiveKitManager();
+      final handler = MessageHandler(
+        callbacks: const ConversationCallbacks(),
+        liveKit: fakeManager,
+        clientTools: {'echo': _EchoTool()},
+      );
+
+      handler.startListening();
+      fakeManager.inject(clientToolCall('call-miss-2'));
+      await Future.delayed(Duration.zero);
+
+      expect(fakeManager.sentMessages, [errorResult('call-miss-2')]);
+
+      handler.dispose();
+      fakeManager.close();
+    });
+
+    test('sends an error result and fires onUnhandledClientToolCall', () async {
+      ClientToolCall? unhandled;
+
+      final fakeManager = _FakeLiveKitManager();
+      final handler = MessageHandler(
+        callbacks: ConversationCallbacks(
+          onUnhandledClientToolCall: (toolCall) => unhandled = toolCall,
+        ),
+        liveKit: fakeManager,
+      );
+
+      handler.startListening();
+      fakeManager.inject(clientToolCall('call-miss-3'));
+      await Future.delayed(Duration.zero);
+
+      expect(unhandled?.toolCallId, 'call-miss-3');
+      expect(fakeManager.sentMessages, [errorResult('call-miss-3')]);
+
+      handler.dispose();
+      fakeManager.close();
+    });
+
+    test('sends one error result when agent_tool_request announces the call',
+        () async {
+      final fakeManager = _FakeLiveKitManager();
+      final handler = MessageHandler(
+        callbacks: const ConversationCallbacks(),
+        liveKit: fakeManager,
+      );
+
+      handler.startListening();
+      fakeManager.inject({
+        'type': 'agent_tool_request',
+        'agent_tool_request': {
+          'tool_name': 'missing_tool',
+          'tool_call_id': 'call-miss-4',
+          'tool_type': 'client',
+        },
+      });
+      fakeManager.inject(clientToolCall('call-miss-4'));
+      await Future.delayed(Duration.zero);
+
+      expect(fakeManager.sentMessages, [errorResult('call-miss-4')]);
 
       handler.dispose();
       fakeManager.close();
