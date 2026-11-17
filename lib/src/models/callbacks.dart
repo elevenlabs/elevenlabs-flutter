@@ -44,7 +44,8 @@ class ConversationCallbacks {
   /// Called when feedback can be sent changes
   final void Function({required bool canSendFeedback})? onCanSendFeedbackChange;
 
-  /// Called when a client tool call is not handled
+  /// Called when a client tool call is not handled. The SDK has already sent
+  /// the agent an error result for the call.
   final void Function(ClientToolCall toolCall)? onUnhandledClientToolCall;
 
   /// Called when an MCP tool call is received

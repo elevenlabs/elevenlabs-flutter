@@ -416,6 +416,8 @@ Tool execution flow:
 5. SDK sends result back to agent
 6. Agent continues conversation with the result
 
+If the agent calls a tool that isn't registered, the SDK sends it an error result and then calls `onUnhandledClientToolCall`.
+
 ## Callbacks
 
 The SDK provides comprehensive callbacks for all conversation events:
