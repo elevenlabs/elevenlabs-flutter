@@ -124,6 +124,7 @@ class ConversationClient extends ChangeNotifier {
       onMcpToolCall: callbacks?.onMcpToolCall,
       onMcpConnectionStatus: callbacks?.onMcpConnectionStatus,
       onAgentToolResponse: callbacks?.onAgentToolResponse,
+      onIncomingEvent: callbacks?.onIncomingEvent,
       onDebug: callbacks?.onDebug,
       onEndCallRequested: () {
         // Agent requested to end the call - trigger session end

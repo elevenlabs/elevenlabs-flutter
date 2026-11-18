@@ -516,6 +516,12 @@ ConversationClient(
       print('Agent text [${part.type}]: ${part.text}');
     },
 
+    // Every event the agent sends, as raw JSON, including types without a
+    // dedicated callback (e.g. agent_response_metadata, client_error)
+    onIncomingEvent: (event) {
+      print('Event: ${event['type']}');
+    },
+
     // Debug (all raw events), very noisy
     onDebug: (data) {
       print('Debug: $data');
