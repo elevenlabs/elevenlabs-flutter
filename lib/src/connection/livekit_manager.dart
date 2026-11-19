@@ -5,6 +5,18 @@ import 'package:livekit_client/livekit_client.dart';
 
 /// Manages LiveKit Room connection and audio tracks
 class LiveKitManager {
+  static const _roomOptions = RoomOptions(
+    defaultAudioPublishOptions: AudioPublishOptions(
+      encoding: AudioEncoding.presetSpeech,
+    ),
+  );
+
+  static const _audioCaptureOptions = AudioCaptureOptions(
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  );
+
   Room? _room;
   EventsListener<RoomEvent>? _eventsListener;
   Timer? _speakingDebounceTimer;
@@ -13,6 +25,10 @@ class LiveKitManager {
   /// Whether LiveKit is running a full reconnect. It removes every remote
   /// participant when one starts, so the agent leaving then is not an end.
   bool _reconnecting = false;
+
+  /// Number of [disconnect] calls, so a [connect] still acquiring the
+  /// microphone can tell it was cancelled and must not connect.
+  int _disconnects = 0;
 
   /// Stream controller for incoming data messages
   final _dataStreamController =
@@ -72,21 +88,19 @@ class LiveKitManager {
   }
 
   /// Connects to a LiveKit server
+  ///
+  /// Connecting creates the billable conversation, so the speaker and the
+  /// microphone, which can stall on the OS (permission prompt, busy device,
+  /// audio route change), are acquired first.
   Future<void> connect(String serverUrl, String token) async {
+    LocalAudioTrack? unpublishedMicrophone;
     try {
       // Clean up any existing connection
       await disconnect();
+      final disconnects = _disconnects;
 
-      const roomOptions = RoomOptions(
-        defaultAudioPublishOptions: AudioPublishOptions(
-          encoding: AudioEncoding.presetSpeech,
-        ),
-      );
-
-      listenToRoom(Room(roomOptions: roomOptions));
-
-      // Connect to LiveKit server
-      await _room!.connect(serverUrl, token);
+      final room = Room(roomOptions: _roomOptions);
+      listenToRoom(room);
 
       // Enable speakerphone on Android
       try {
@@ -98,25 +112,35 @@ class LiveKitManager {
         );
       }
 
-      // Enable microphone (LiveKit handles track creation automatically)
-      await _room!.localParticipant?.setMicrophoneEnabled(
-        true,
-        audioCaptureOptions: const AudioCaptureOptions(
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        ),
-      );
+      unpublishedMicrophone = await acquireMicrophone();
+
+      if (_disconnects != disconnects) {
+        throw StateError('Disconnected while acquiring the microphone');
+      }
+
+      await room.connect(serverUrl, token);
+
+      await room.localParticipant!.publishAudioTrack(unpublishedMicrophone);
+      unpublishedMicrophone = null;
 
       // Emit room ready event - connection is fully established and ready for messages
       _safeAdd(_roomReadyController, null);
     } catch (e) {
+      await unpublishedMicrophone?.stop();
       _safeAddError(
         _dataStreamController,
         Exception('LiveKit Connection Error: $e'),
       );
       rethrow;
     }
+  }
+
+  /// Creates a microphone track and starts capturing from it
+  @visibleForTesting
+  Future<LocalAudioTrack> acquireMicrophone() async {
+    final track = await LocalAudioTrack.create(_audioCaptureOptions);
+    await track.start();
+    return track;
   }
 
   /// Makes [room] the current room and forwards its events to the streams
@@ -250,6 +274,8 @@ class LiveKitManager {
 
   /// Disconnects from the LiveKit server and cleans up resources
   Future<void> disconnect() async {
+    _disconnects++;
+
     // Cancel any pending debounce timer
     _speakingDebounceTimer?.cancel();
     _speakingDebounceTimer = null;
