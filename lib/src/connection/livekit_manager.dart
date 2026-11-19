@@ -26,8 +26,8 @@ class LiveKitManager {
   /// participant when one starts, so the agent leaving then is not an end.
   bool _reconnecting = false;
 
-  /// Number of [disconnect] calls, so a [connect] still acquiring the
-  /// microphone can tell it was cancelled and must not connect.
+  /// Incremented by [connect] and [disconnect], so a [connect] that is still
+  /// preparing can tell it was cancelled or superseded and must not connect.
   int _disconnects = 0;
 
   /// Stream controller for incoming data messages
@@ -96,8 +96,8 @@ class LiveKitManager {
     LocalAudioTrack? unpublishedMicrophone;
     try {
       // Clean up any existing connection
-      await disconnect();
-      final disconnects = _disconnects;
+      final disconnects = ++_disconnects;
+      await _tearDown();
 
       final room = Room(roomOptions: _roomOptions);
       listenToRoom(room);
@@ -115,7 +115,7 @@ class LiveKitManager {
       unpublishedMicrophone = await acquireMicrophone();
 
       if (_disconnects != disconnects) {
-        throw StateError('Disconnected while acquiring the microphone');
+        throw StateError('Disconnected before connecting to the room');
       }
 
       await room.connect(serverUrl, token);
@@ -139,7 +139,12 @@ class LiveKitManager {
   @visibleForTesting
   Future<LocalAudioTrack> acquireMicrophone() async {
     final track = await LocalAudioTrack.create(_audioCaptureOptions);
-    await track.start();
+    try {
+      await track.start();
+    } catch (_) {
+      await track.stop();
+      rethrow;
+    }
     return track;
   }
 
@@ -275,7 +280,10 @@ class LiveKitManager {
   /// Disconnects from the LiveKit server and cleans up resources
   Future<void> disconnect() async {
     _disconnects++;
+    await _tearDown();
+  }
 
+  Future<void> _tearDown() async {
     // Cancel any pending debounce timer
     _speakingDebounceTimer?.cancel();
     _speakingDebounceTimer = null;

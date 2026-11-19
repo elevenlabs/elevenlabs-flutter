@@ -312,6 +312,23 @@ void main() {
       expect(microphone.stopped, isTrue);
     });
 
+    test('does not connect when disconnected while cleaning up the last room',
+        () async {
+      final microphone = _FakeMicrophone();
+      final manager = _MicrophoneLiveKitManager((_) async => microphone);
+      addTearDown(manager.dispose);
+      manager.listenToRoom(livekit.Room());
+
+      final connecting = expectLater(
+        manager.connect(unreachableUrl, 'token'),
+        throwsA(isA<StateError>()),
+      );
+      await manager.disconnect();
+
+      await connecting;
+      expect(microphone.stopped, isTrue);
+    });
+
     test('stops the microphone when connecting to the room fails', () async {
       final microphone = _FakeMicrophone();
       final manager = _MicrophoneLiveKitManager((_) async => microphone);
