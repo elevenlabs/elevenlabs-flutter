@@ -183,21 +183,13 @@ class ClientOverrides {
   /// Optimize streaming latency (0-4)
   final int? optimizeStreamingLatency;
 
-  /// SDK version
-  final String? version;
-
-  ClientOverrides({
-    this.asrQuality,
-    this.optimizeStreamingLatency,
-    this.version,
-  });
+  ClientOverrides({this.asrQuality, this.optimizeStreamingLatency});
 
   Map<String, dynamic> toJson() {
     return {
       if (asrQuality != null) 'asr_quality': asrQuality,
       if (optimizeStreamingLatency != null)
         'optimize_streaming_latency': optimizeStreamingLatency,
-      if (version != null) 'version': version,
     };
   }
 }
