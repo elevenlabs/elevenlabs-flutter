@@ -19,6 +19,8 @@ class LiveKitManager {
 
   Room? _room;
   EventsListener<RoomEvent>? _eventsListener;
+  LocalAudioTrack? _unpublishedMicrophone;
+  Future<void> _tearingDown = Future.value();
   Timer? _speakingDebounceTimer;
   bool _lastSpeakingState = false;
 
@@ -26,8 +28,7 @@ class LiveKitManager {
   /// participant when one starts, so the agent leaving then is not an end.
   bool _reconnecting = false;
 
-  /// Incremented by [connect] and [disconnect], so a [connect] that is still
-  /// preparing can tell it was cancelled or superseded and must not connect.
+  /// Bumped by [connect] and [disconnect], so a connect knows it was cancelled
   int _disconnects = 0;
 
   /// Stream controller for incoming data messages
@@ -87,27 +88,20 @@ class LiveKitManager {
     }
   }
 
-  /// Connects to a LiveKit server
-  ///
-  /// Connecting creates the billable conversation, so the speaker and the
-  /// microphone, which can stall on the OS (permission prompt, busy device,
-  /// audio route change), are acquired first.
+  /// Connects to a LiveKit server, once the microphone is acquired
   Future<void> connect(String serverUrl, String token) async {
-    LocalAudioTrack? unpublishedMicrophone;
-    try {
-      // Clean up any existing connection
-      final disconnects = ++_disconnects;
-      void throwIfDisconnected() {
-        if (_disconnects != disconnects) {
-          throw StateError('Disconnected before connecting to the room');
-        }
+    final disconnects = ++_disconnects;
+    void throwIfDisconnected() {
+      if (_disconnects != disconnects) {
+        throw StateError('Disconnected before connecting to the room');
       }
+    }
 
+    LocalAudioTrack? microphone;
+    Room? room;
+    try {
       await _tearDown();
       throwIfDisconnected();
-
-      final room = Room(roomOptions: _roomOptions);
-      listenToRoom(room);
 
       // Enable speakerphone on Android
       try {
@@ -120,38 +114,45 @@ class LiveKitManager {
       }
 
       throwIfDisconnected();
-      unpublishedMicrophone = await acquireMicrophone();
+      microphone = await acquireMicrophone();
       throwIfDisconnected();
 
-      await room.connect(serverUrl, token);
+      room = createRoom();
+      listenToRoom(room);
+      _unpublishedMicrophone = microphone;
 
-      await room.localParticipant!.publishAudioTrack(unpublishedMicrophone);
-      unpublishedMicrophone = null;
+      await room.connect(serverUrl, token);
+      throwIfDisconnected();
+
+      await room.localParticipant!.publishAudioTrack(microphone);
+      throwIfDisconnected();
+      _unpublishedMicrophone = null;
 
       // Emit room ready event - connection is fully established and ready for messages
       _safeAdd(_roomReadyController, null);
     } catch (e) {
-      await unpublishedMicrophone?.stop();
-      _safeAddError(
-        _dataStreamController,
-        Exception('LiveKit Connection Error: $e'),
-      );
+      await microphone?.stop();
+      if (_disconnects == disconnects) {
+        _safeAddError(
+          _dataStreamController,
+          Exception('LiveKit Connection Error: $e'),
+        );
+        await _tearDown();
+      } else if (room != null) {
+        // A connect torn down while its socket was opening can still join
+        await _release(room: room, eventsListener: null, microphone: null);
+      }
       rethrow;
     }
   }
 
-  /// Creates a microphone track and starts capturing from it
+  /// Creates the microphone track, which is where the OS can prompt or stall
   @visibleForTesting
-  Future<LocalAudioTrack> acquireMicrophone() async {
-    final track = await LocalAudioTrack.create(_audioCaptureOptions);
-    try {
-      await track.start();
-    } catch (_) {
-      await track.stop();
-      rethrow;
-    }
-    return track;
-  }
+  Future<LocalAudioTrack> acquireMicrophone() =>
+      LocalAudioTrack.create(_audioCaptureOptions);
+
+  @visibleForTesting
+  Room createRoom() => Room(roomOptions: _roomOptions);
 
   /// Makes [room] the current room and forwards its events to the streams
   @visibleForTesting
@@ -206,9 +207,9 @@ class LiveKitManager {
       })
       ..on<AudioPlaybackStatusChanged>((event) async {
         // Handle audio playback issues (especially for iOS)
-        if (!_room!.canPlaybackAudio) {
+        if (!room.canPlaybackAudio) {
           try {
-            await _room!.startAudio();
+            await room.startAudio();
           } catch (e) {
             _safeAddError(
               _dataStreamController,
@@ -288,21 +289,66 @@ class LiveKitManager {
     await _tearDown();
   }
 
-  Future<void> _tearDown() async {
+  Future<void> _tearDown() {
     // Cancel any pending debounce timer
     _speakingDebounceTimer?.cancel();
     _speakingDebounceTimer = null;
     _lastSpeakingState = false;
 
-    // Dispose of event listener first
-    await _eventsListener?.dispose();
+    final room = _room;
+    final eventsListener = _eventsListener;
+    final microphone = _unpublishedMicrophone;
+    _room = null;
     _eventsListener = null;
+    _unpublishedMicrophone = null;
 
-    final currentRoom = _room;
-    if (currentRoom != null) {
+    return _release(
+      room: room,
+      eventsListener: eventsListener,
+      microphone: microphone,
+    );
+  }
+
+  Future<void> _release({
+    required Room? room,
+    required EventsListener<RoomEvent>? eventsListener,
+    required LocalAudioTrack? microphone,
+  }) {
+    return _tearingDown = _tearingDown.then(
+      (_) => _releaseNow(
+        room: room,
+        eventsListener: eventsListener,
+        microphone: microphone,
+      ),
+    );
+  }
+
+  Future<void> _releaseNow({
+    required Room? room,
+    required EventsListener<RoomEvent>? eventsListener,
+    required LocalAudioTrack? microphone,
+  }) async {
+    try {
+      // Dispose of event listener first
+      await eventsListener?.dispose();
+      await microphone?.stop();
+    } catch (e) {
+      _safeAddError(
+        _dataStreamController,
+        Exception('Error during disconnect: $e'),
+      );
+    }
+
+    if (room == null) {
+      return;
+    }
+
+    // LiveKit's disconnect only returns promptly for a room that connected
+    if (room.connectionState == ConnectionState.connected ||
+        room.connectionState == ConnectionState.reconnecting) {
       try {
         // Add timeout to prevent hanging
-        await currentRoom.disconnect().timeout(
+        await room.disconnect().timeout(
           const Duration(seconds: 3),
           onTimeout: () {
             _safeAddError(
@@ -317,17 +363,15 @@ class LiveKitManager {
           Exception('Error during disconnect: $e'),
         );
       }
+    }
 
-      try {
-        await currentRoom.dispose();
-      } catch (e) {
-        _safeAddError(
-          _dataStreamController,
-          Exception('Error disposing room: $e'),
-        );
-      }
-
-      _room = null;
+    try {
+      await room.dispose();
+    } catch (e) {
+      _safeAddError(
+        _dataStreamController,
+        Exception('Error disposing room: $e'),
+      );
     }
   }
 

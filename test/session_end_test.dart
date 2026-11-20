@@ -87,16 +87,101 @@ class _FakeMicrophone extends Fake implements livekit.LocalAudioTrack {
   }
 }
 
+class _FakePublication extends Fake
+    implements livekit.LocalTrackPublication<livekit.LocalAudioTrack> {}
+
+class _FakeLocalParticipant extends Fake implements livekit.LocalParticipant {
+  _FakeLocalParticipant(this._room);
+
+  final _FakeRoom _room;
+
+  @override
+  Future<livekit.LocalTrackPublication<livekit.LocalAudioTrack>>
+      publishAudioTrack(
+    livekit.LocalAudioTrack track, {
+    livekit.AudioPublishOptions? publishOptions,
+  }) async {
+    _room.calls.add('publish');
+    await _room.onPublish?.call();
+    return _FakePublication();
+  }
+}
+
+class _FakeRoom extends Fake implements livekit.Room {
+  _FakeRoom({
+    this.connectionState = livekit.ConnectionState.disconnected,
+    this.onConnect,
+    this.onPublish,
+    this.onDisconnect,
+  });
+
+  final Future<void> Function()? onConnect;
+  final Future<void> Function()? onPublish;
+  final Future<void> Function()? onDisconnect;
+  final calls = <String>[];
+  final _events = livekit.Room();
+
+  @override
+  livekit.ConnectionState connectionState;
+
+  @override
+  late final livekit.LocalParticipant localParticipant =
+      _FakeLocalParticipant(this);
+
+  @override
+  livekit.EventsListener<livekit.RoomEvent> createListener({
+    bool synchronized = false,
+  }) =>
+      _events.createListener(synchronized: synchronized);
+
+  @override
+  Future<void> connect(
+    String url,
+    String token, {
+    livekit.ConnectOptions? connectOptions,
+    livekit.RoomOptions? roomOptions,
+    livekit.FastConnectOptions? fastConnectOptions,
+  }) async {
+    calls.add('connect');
+    connectionState = livekit.ConnectionState.connecting;
+    await onConnect?.call();
+    connectionState = livekit.ConnectionState.connected;
+  }
+
+  @override
+  Future<void> disconnect() async {
+    calls.add('disconnect');
+    await onDisconnect?.call();
+    connectionState = livekit.ConnectionState.disconnected;
+  }
+
+  @override
+  Future<bool> dispose() async {
+    calls.add('dispose');
+    return true;
+  }
+}
+
 /// LiveKitManager whose microphone is acquired by [onAcquireMicrophone]
 class _MicrophoneLiveKitManager extends LiveKitManager {
-  _MicrophoneLiveKitManager(this.onAcquireMicrophone);
+  _MicrophoneLiveKitManager(this.onAcquireMicrophone, {this.onCreateRoom});
 
   final Future<livekit.LocalAudioTrack> Function(_MicrophoneLiveKitManager)
       onAcquireMicrophone;
+  final livekit.Room Function()? onCreateRoom;
 
   @override
   Future<livekit.LocalAudioTrack> acquireMicrophone() =>
       onAcquireMicrophone(this);
+
+  @override
+  livekit.Room createRoom() => onCreateRoom?.call() ?? super.createRoom();
+}
+
+List<Object> _dataErrors(LiveKitManager manager) {
+  final errors = <Object>[];
+  manager.dataStream.listen((_) {}, onError: errors.add);
+  return errors;
 }
 
 Map<String, dynamic> _agentToolResponse(String toolName) => {
@@ -322,20 +407,156 @@ void main() {
     // Nothing listens on this port, so a connect attempt fails fast.
     const unreachableUrl = 'ws://127.0.0.1:9';
 
-    test('acquires the microphone before connecting to the room', () async {
-      livekit.ConnectionState? stateWhenAcquiring;
-      final permissionDenied = Exception('Permission denied');
-      final manager = _MicrophoneLiveKitManager((manager) async {
-        stateWhenAcquiring = manager.room?.connectionState;
-        throw permissionDenied;
-      });
+    test('acquires the microphone before creating and connecting the room',
+        () async {
+      livekit.Room? roomWhenAcquiring;
+      final room = _FakeRoom();
+      final microphone = _FakeMicrophone();
+      final manager = _MicrophoneLiveKitManager(
+        (manager) async {
+          roomWhenAcquiring = manager.room;
+          room.calls.add('microphone');
+          return microphone;
+        },
+        onCreateRoom: () => room,
+      );
+      addTearDown(manager.dispose);
+      var ready = 0;
+      manager.roomReadyStream.listen((_) => ready++);
+
+      await manager.connect(unreachableUrl, 'token');
+      await _settle();
+
+      expect(roomWhenAcquiring, isNull);
+      expect(room.calls, ['microphone', 'connect', 'publish']);
+      expect(microphone.stopped, isFalse);
+      expect(ready, 1);
+    });
+
+    test('disconnects a room that never connected without waiting for it',
+        () async {
+      final manager = LiveKitManager();
+      addTearDown(manager.dispose);
+      final errors = _dataErrors(manager);
+      manager.listenToRoom(livekit.Room());
+
+      await manager.disconnect();
+      await _settle();
+
+      expect(errors, isEmpty);
+      expect(manager.room, isNull);
+    });
+
+    test('a disconnect in progress leaves a newer room in place', () async {
+      final disconnected = Completer<void>();
+      final oldRoom = _FakeRoom(
+        connectionState: livekit.ConnectionState.connected,
+        onDisconnect: () => disconnected.future,
+      );
+      final newRoom = _FakeRoom();
+      final manager = LiveKitManager();
+      addTearDown(manager.dispose);
+      manager.listenToRoom(oldRoom);
+
+      final disconnecting = manager.disconnect();
+      await _settle();
+      manager.listenToRoom(newRoom);
+      disconnected.complete();
+      await disconnecting;
+
+      expect(oldRoom.calls, ['disconnect', 'dispose']);
+      expect(manager.room, same(newRoom));
+    });
+
+    test('waits for a disconnect in progress before acquiring the microphone',
+        () async {
+      final disconnected = Completer<void>();
+      final oldRoom = _FakeRoom(
+        connectionState: livekit.ConnectionState.connected,
+        onDisconnect: () => disconnected.future,
+      );
+      var acquired = false;
+      final manager = _MicrophoneLiveKitManager(
+        (_) async {
+          acquired = true;
+          return _FakeMicrophone();
+        },
+        onCreateRoom: _FakeRoom.new,
+      );
+      addTearDown(manager.dispose);
+      manager.listenToRoom(oldRoom);
+
+      final disconnecting = manager.disconnect();
+      await _settle();
+      final connecting = expectLater(
+        manager.connect(unreachableUrl, 'token'),
+        throwsA(isA<StateError>()),
+      );
+      await _settle();
+      expect(acquired, isFalse);
+
+      disconnected.complete();
+      await disconnecting;
+      await manager.disconnect();
+      await connecting;
+    });
+
+    test('stops the microphone when disconnected while the room connects',
+        () async {
+      final connecting = Completer<void>();
+      final connected = Completer<void>();
+      final room = _FakeRoom(
+        onConnect: () {
+          connecting.complete();
+          return connected.future;
+        },
+      );
+      final microphone = _FakeMicrophone();
+      final manager = _MicrophoneLiveKitManager(
+        (_) async => microphone,
+        onCreateRoom: () => room,
+      );
+      addTearDown(manager.dispose);
+      var ready = 0;
+      manager.roomReadyStream.listen((_) => ready++);
+
+      final connect = expectLater(
+        manager.connect(unreachableUrl, 'token'),
+        throwsA(isA<StateError>()),
+      );
+      await connecting.future;
+      await manager.disconnect();
+
+      expect(microphone.stopped, isTrue);
+      expect(room.calls, ['connect', 'dispose']);
+
+      connected.complete();
+      await connect;
+      await _settle();
+
+      expect(room.calls, ['connect', 'dispose', 'disconnect', 'dispose']);
+      expect(ready, 0);
+    });
+
+    test('tears the room down when publishing the microphone fails', () async {
+      final room = _FakeRoom(
+        onPublish: () async => throw Exception('Publish timed out'),
+      );
+      final microphone = _FakeMicrophone();
+      final manager = _MicrophoneLiveKitManager(
+        (_) async => microphone,
+        onCreateRoom: () => room,
+      );
       addTearDown(manager.dispose);
 
       await expectLater(
         manager.connect(unreachableUrl, 'token'),
-        throwsA(same(permissionDenied)),
+        throwsA(isA<Exception>()),
       );
-      expect(stateWhenAcquiring, livekit.ConnectionState.disconnected);
+
+      expect(microphone.stopped, isTrue);
+      expect(room.calls, ['connect', 'publish', 'disconnect', 'dispose']);
+      expect(manager.room, isNull);
     });
 
     test('does not connect when disconnected while acquiring the microphone',
@@ -349,13 +570,18 @@ void main() {
       });
       addTearDown(manager.dispose);
 
+      final errors = _dataErrors(manager);
+
       final connecting = manager.connect(unreachableUrl, 'token');
       await acquiring.future;
       await manager.disconnect();
       acquired.complete(microphone);
 
       await expectLater(connecting, throwsA(isA<StateError>()));
+      await _settle();
       expect(microphone.stopped, isTrue);
+      expect(manager.room, isNull);
+      expect(errors, isEmpty);
     });
 
     test(
