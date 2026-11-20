@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:elevenlabs_agents/elevenlabs_agents.dart';
 import 'package:elevenlabs_agents/src/connection/livekit_manager.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:livekit_client/livekit_client.dart' as livekit;
 
 /// LiveKitManager that connects without a server, so tests can inject data
@@ -12,7 +14,11 @@ class _FakeLiveKitManager extends LiveKitManager {
   final _disconnects = StreamController<String>.broadcast();
   final _roomReady = StreamController<void>.broadcast();
   final _speaking = StreamController<bool>.broadcast();
+  int connectCalls = 0;
   int disconnectCalls = 0;
+  Future<void> Function()? onConnect;
+  Future<void> Function()? onSendMessage;
+  Future<void> Function()? onDisconnect;
 
   @override
   Stream<Map<String, dynamic>> get dataStream => _data.stream;
@@ -28,15 +34,20 @@ class _FakeLiveKitManager extends LiveKitManager {
 
   @override
   Future<void> connect(String serverUrl, String token) async {
+    connectCalls++;
+    await onConnect?.call();
     _roomReady.add(null);
   }
 
   @override
-  Future<void> sendMessage(Map<String, dynamic> message) async {}
+  Future<void> sendMessage(Map<String, dynamic> message) async {
+    await onSendMessage?.call();
+  }
 
   @override
   Future<void> disconnect() async {
     disconnectCalls++;
+    await onDisconnect?.call();
   }
 
   @override
@@ -52,22 +63,20 @@ class _FakeLiveKitManager extends LiveKitManager {
   void emitDisconnect(String reason) => _disconnects.add(reason);
 }
 
-/// Fake whose first connect stalls until [releaseFirstConnect], then fails as
-/// a connect cancelled by a disconnect does.
+/// Fake whose first connect stalls until [releaseFirstConnect], then fails
 class _StallingLiveKitManager extends _FakeLiveKitManager {
+  _StallingLiveKitManager() {
+    onConnect = () async {
+      if (connectCalls == 1) {
+        await _firstConnect.future;
+        throw StateError('Disconnected before connecting to the room');
+      }
+    };
+  }
+
   final _firstConnect = Completer<void>();
-  int connectCalls = 0;
 
   void releaseFirstConnect() => _firstConnect.complete();
-
-  @override
-  Future<void> connect(String serverUrl, String token) async {
-    if (++connectCalls == 1) {
-      await _firstConnect.future;
-      throw StateError('Disconnected before connecting to the room');
-    }
-    await super.connect(serverUrl, token);
-  }
 }
 
 class _FakeRemoteParticipant extends Fake implements livekit.RemoteParticipant {
@@ -306,8 +315,12 @@ void main() {
         () async {
       final liveKit = _StallingLiveKitManager();
       addTearDown(liveKit.dispose);
+      final errors = <String>[];
       final client = ConversationClient.withLiveKitManager(
         liveKitManager: liveKit,
+        callbacks: ConversationCallbacks(
+          onError: (message, [_]) => errors.add(message),
+        ),
       );
 
       final first = expectLater(
@@ -320,11 +333,143 @@ void main() {
       await first;
 
       expect(client.status, ConversationStatus.connected);
+      expect(errors, isEmpty);
 
       final callsBefore = liveKit.disconnectCalls;
       await client.endSession();
 
       expect(liveKit.disconnectCalls, callsBefore + 1);
+      expect(client.status, ConversationStatus.disconnected);
+    });
+
+    test('an ended start that fails leaves the status to the end in progress',
+        () async {
+      final liveKit = _StallingLiveKitManager();
+      addTearDown(liveKit.dispose);
+      final disconnected = Completer<void>();
+      liveKit.onDisconnect = () => disconnected.future;
+      final errors = <String>[];
+      final reasons = <String>[];
+      final client = ConversationClient.withLiveKitManager(
+        liveKitManager: liveKit,
+        callbacks: ConversationCallbacks(
+          onError: (message, [_]) => errors.add(message),
+          onDisconnect: (details) => reasons.add(details.reason),
+        ),
+      );
+
+      final start = expectLater(
+        client.startSession(conversationToken: 'token'),
+        throwsA(isA<StateError>()),
+      );
+      final ending = client.endSession();
+      liveKit.releaseFirstConnect();
+      await start;
+
+      expect(client.status, ConversationStatus.disconnecting);
+      expect(errors, isEmpty);
+
+      disconnected.complete();
+      await ending;
+
+      expect(client.status, ConversationStatus.disconnected);
+      expect(reasons, ['user']);
+    });
+
+    test('a start ended while fetching its token does not connect', () async {
+      final liveKit = _FakeLiveKitManager();
+      addTearDown(liveKit.dispose);
+      final client = ConversationClient.withLiveKitManager(
+        liveKitManager: liveKit,
+      );
+      final response = Completer<http.Response>();
+
+      await http.runWithClient(() async {
+        final start = expectLater(
+          client.startSession(agentId: 'agent'),
+          throwsA(isA<StateError>()),
+        );
+        await client.endSession();
+        response.complete(http.Response('{"token": "token"}', 200));
+        await start;
+      }, () => MockClient((_) => response.future));
+
+      expect(liveKit.connectCalls, 0);
+      expect(client.status, ConversationStatus.disconnected);
+    });
+
+    test('a failed start is torn down, so a retry handles each message once',
+        () async {
+      final liveKit = _FakeLiveKitManager();
+      addTearDown(liveKit.dispose);
+      var toolResponses = 0;
+      final client = ConversationClient.withLiveKitManager(
+        liveKitManager: liveKit,
+        callbacks: ConversationCallbacks(
+          onAgentToolResponse: (_) => toolResponses++,
+        ),
+      );
+      liveKit.onConnect = () async => throw Exception('Permission denied');
+
+      await expectLater(
+        client.startSession(conversationToken: 'token'),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(liveKit.disconnectCalls, 1);
+      expect(client.status, ConversationStatus.disconnected);
+
+      liveKit.onConnect = null;
+      await client.startSession(conversationToken: 'token');
+      liveKit.injectMessage(_agentToolResponse('transfer_to_agent'));
+      await _settle();
+
+      expect(toolResponses, 1);
+    });
+
+    test('a start that fails after the room connected tears the room down',
+        () async {
+      final liveKit = _FakeLiveKitManager();
+      addTearDown(liveKit.dispose);
+      final client = ConversationClient.withLiveKitManager(
+        liveKitManager: liveKit,
+      );
+      liveKit.onSendMessage = () async => throw Exception('Send failed');
+
+      await expectLater(
+        client.startSession(conversationToken: 'token'),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(liveKit.disconnectCalls, 1);
+      expect(client.status, ConversationStatus.disconnected);
+    });
+
+    test('a start that fails because the room closed is reported as an error',
+        () async {
+      final liveKit = _StallingLiveKitManager();
+      addTearDown(liveKit.dispose);
+      final errors = <String>[];
+      final reasons = <String>[];
+      final client = ConversationClient.withLiveKitManager(
+        liveKitManager: liveKit,
+        callbacks: ConversationCallbacks(
+          onError: (message, [_]) => errors.add(message),
+          onDisconnect: (details) => reasons.add(details.reason),
+        ),
+      );
+
+      final start = expectLater(
+        client.startSession(conversationToken: 'token'),
+        throwsA(isA<StateError>()),
+      );
+      liveKit.emitDisconnect('error');
+      await _settle();
+      liveKit.releaseFirstConnect();
+      await start;
+
+      expect(errors, ['Failed to start session']);
+      expect(reasons, ['error']);
       expect(client.status, ConversationStatus.disconnected);
     });
   });
