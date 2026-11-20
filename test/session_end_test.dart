@@ -52,6 +52,24 @@ class _FakeLiveKitManager extends LiveKitManager {
   void emitDisconnect(String reason) => _disconnects.add(reason);
 }
 
+/// Fake whose first connect stalls until [releaseFirstConnect], then fails as
+/// a connect cancelled by a disconnect does.
+class _StallingLiveKitManager extends _FakeLiveKitManager {
+  final _firstConnect = Completer<void>();
+  int connectCalls = 0;
+
+  void releaseFirstConnect() => _firstConnect.complete();
+
+  @override
+  Future<void> connect(String serverUrl, String token) async {
+    if (++connectCalls == 1) {
+      await _firstConnect.future;
+      throw StateError('Disconnected before connecting to the room');
+    }
+    await super.connect(serverUrl, token);
+  }
+}
+
 class _FakeRemoteParticipant extends Fake implements livekit.RemoteParticipant {
   _FakeRemoteParticipant(this.identity);
 
@@ -195,6 +213,34 @@ void main() {
       await client.endSession();
 
       expect(reasons, ['agent']);
+    });
+  });
+
+  group('ConversationClient - session start', () {
+    test('an ended start that fails later leaves the newer session connected',
+        () async {
+      final liveKit = _StallingLiveKitManager();
+      addTearDown(liveKit.dispose);
+      final client = ConversationClient.withLiveKitManager(
+        liveKitManager: liveKit,
+      );
+
+      final first = expectLater(
+        client.startSession(conversationToken: 'first'),
+        throwsA(isA<StateError>()),
+      );
+      await client.endSession();
+      await client.startSession(conversationToken: 'second');
+      liveKit.releaseFirstConnect();
+      await first;
+
+      expect(client.status, ConversationStatus.connected);
+
+      final callsBefore = liveKit.disconnectCalls;
+      await client.endSession();
+
+      expect(liveKit.disconnectCalls, callsBefore + 1);
+      expect(client.status, ConversationStatus.disconnected);
     });
   });
 

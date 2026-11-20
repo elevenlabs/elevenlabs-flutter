@@ -33,6 +33,10 @@ class ConversationClient extends ChangeNotifier {
   int _lastFeedbackEventId = 0;
   bool _overridesSent = false;
 
+  /// Incremented by [startSession], so a start that was ended and superseded
+  /// by a newer one does not change the newer session's status when it fails.
+  int _startAttempts = 0;
+
   StreamSubscription<livekit.ConnectionState>? _stateSubscription;
   StreamSubscription<bool>? _speakingSubscription;
   StreamSubscription<String>? _disconnectSubscription;
@@ -161,6 +165,7 @@ class ConversationClient extends ChangeNotifier {
       );
     }
 
+    final attempt = ++_startAttempts;
     try {
       // Ensure clean state (important for hot-reload and multiple sessions)
       _overridesSent = false;
@@ -230,7 +235,9 @@ class ConversationClient extends ChangeNotifier {
 
       _setStatus(ConversationStatus.connected);
     } catch (e) {
-      _setStatus(ConversationStatus.disconnected);
+      if (attempt == _startAttempts) {
+        _setStatus(ConversationStatus.disconnected);
+      }
       _callbacks?.onError?.call('Failed to start session', e);
       rethrow;
     }
