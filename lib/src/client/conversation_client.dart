@@ -33,6 +33,9 @@ class ConversationClient extends ChangeNotifier {
   int _lastFeedbackEventId = 0;
   bool _overridesSent = false;
 
+  /// Bumped when a start begins or the app ends it, so a start knows it was ended
+  int _startAttempts = 0;
+
   StreamSubscription<livekit.ConnectionState>? _stateSubscription;
   StreamSubscription<bool>? _speakingSubscription;
   StreamSubscription<String>? _disconnectSubscription;
@@ -161,6 +164,16 @@ class ConversationClient extends ChangeNotifier {
       );
     }
 
+    final attempt = ++_startAttempts;
+    bool cancelled() => _startAttempts != attempt;
+    bool connecting() =>
+        !cancelled() && _status == ConversationStatus.connecting;
+    void throwIfEnded() {
+      if (!connecting()) {
+        throw StateError('Session ended before it started');
+      }
+    }
+
     try {
       // Ensure clean state (important for hot-reload and multiple sessions)
       _overridesSent = false;
@@ -181,6 +194,7 @@ class ConversationClient extends ChangeNotifier {
           environment: environment,
         );
         token = result.token;
+        throwIfEnded();
       } else {
         throw ArgumentError(
           'Either agentId or conversationToken must be provided',
@@ -221,23 +235,35 @@ class ConversationClient extends ChangeNotifier {
 
       // Wait for room to be fully ready and send overrides
       await roomReadyFuture;
+      throwIfEnded();
       await _sendOverrides(
         userId: userId,
         overrides: overrides,
         customLlmExtraBody: customLlmExtraBody,
         dynamicVariables: dynamicVariables,
       );
+      throwIfEnded();
 
       _setStatus(ConversationStatus.connected);
     } catch (e) {
-      _setStatus(ConversationStatus.disconnected);
-      _callbacks?.onError?.call('Failed to start session', e);
+      if (connecting()) {
+        await _cleanup().catchError((Object _) {});
+        if (connecting()) {
+          _setStatus(ConversationStatus.disconnected);
+        }
+      }
+      if (!cancelled()) {
+        _callbacks?.onError?.call('Failed to start session', e);
+      }
       rethrow;
     }
   }
 
   /// Ends the current conversation session
-  Future<void> endSession() => _endSession('user');
+  Future<void> endSession() {
+    _startAttempts++;
+    return _endSession('user');
+  }
 
   /// Tears the session down and reports its end once, with [reason]
   ///
@@ -369,9 +395,8 @@ class ConversationClient extends ChangeNotifier {
 
     try {
       await _liveKitManager.sendMessage(overridesMessage);
-    } catch (e) {
+    } catch (_) {
       _overridesSent = false; // Reset flag on error so retry is possible
-      _callbacks?.onError?.call('Failed to send overrides', e);
       rethrow;
     }
   }
@@ -396,6 +421,7 @@ class ConversationClient extends ChangeNotifier {
 
   @override
   void dispose() {
+    _startAttempts++;
     _cleanup();
     _messageHandler.dispose();
     _liveKitManager.dispose().ignore();
