@@ -395,9 +395,8 @@ class ConversationClient extends ChangeNotifier {
 
     try {
       await _liveKitManager.sendMessage(overridesMessage);
-    } catch (e) {
+    } catch (_) {
       _overridesSent = false; // Reset flag on error so retry is possible
-      _callbacks?.onError?.call('Failed to send overrides', e);
       rethrow;
     }
   }

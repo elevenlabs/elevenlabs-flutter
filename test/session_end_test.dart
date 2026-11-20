@@ -449,6 +449,37 @@ void main() {
       expect(client.status, ConversationStatus.disconnected);
     });
 
+    test('a start ended while sending its overrides reports no error',
+        () async {
+      final liveKit = _FakeLiveKitManager();
+      addTearDown(liveKit.dispose);
+      final errors = <String>[];
+      final client = ConversationClient.withLiveKitManager(
+        liveKitManager: liveKit,
+        callbacks: ConversationCallbacks(
+          onError: (message, [_]) => errors.add(message),
+        ),
+      );
+      final sending = Completer<void>();
+      final sent = Completer<void>();
+      liveKit.onSendMessage = () {
+        sending.complete();
+        return sent.future;
+      };
+
+      final start = expectLater(
+        client.startSession(conversationToken: 'token'),
+        throwsA(isA<Exception>()),
+      );
+      await sending.future;
+      await client.endSession();
+      sent.completeError(Exception('Send failed'));
+      await start;
+
+      expect(errors, isEmpty);
+      expect(client.status, ConversationStatus.disconnected);
+    });
+
     test('a start that fails because the room closed is reported as an error',
         () async {
       final liveKit = _StallingLiveKitManager();
