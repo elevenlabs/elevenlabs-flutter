@@ -131,7 +131,16 @@ class LiveKitManager {
       // Emit room ready event - connection is fully established and ready for messages
       _safeAdd(_roomReadyController, null);
     } catch (e) {
-      await microphone?.stop();
+      try {
+        await microphone?.stop();
+      } catch (stopError) {
+        if (_disconnects == disconnects) {
+          _safeAddError(
+            _dataStreamController,
+            Exception('Could not stop the microphone: $stopError'),
+          );
+        }
+      }
       if (_disconnects == disconnects) {
         _safeAddError(
           _dataStreamController,

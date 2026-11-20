@@ -87,11 +87,15 @@ class _FakeRemoteParticipant extends Fake implements livekit.RemoteParticipant {
 }
 
 class _FakeMicrophone extends Fake implements livekit.LocalAudioTrack {
+  _FakeMicrophone({this.stopError});
+
+  final Object? stopError;
   bool stopped = false;
 
   @override
   Future<bool> stop() async {
     stopped = true;
+    if (stopError case final error?) throw error;
     return true;
   }
 }
@@ -681,6 +685,56 @@ void main() {
 
       expect(room.calls, ['connect', 'dispose', 'disconnect', 'dispose']);
       expect(ready, 0);
+    });
+
+    test(
+        'disconnects a room that joins after the disconnect even when stopping '
+        'the microphone fails', () async {
+      final connecting = Completer<void>();
+      final connected = Completer<void>();
+      final room = _FakeRoom(
+        onConnect: () {
+          connecting.complete();
+          return connected.future;
+        },
+      );
+      final manager = _MicrophoneLiveKitManager(
+        (_) async => _FakeMicrophone(stopError: Exception('Device busy')),
+        onCreateRoom: () => room,
+      );
+      addTearDown(manager.dispose);
+
+      final connect = expectLater(
+        manager.connect(unreachableUrl, 'token'),
+        throwsA(isA<StateError>()),
+      );
+      await connecting.future;
+      await manager.disconnect();
+      connected.complete();
+      await connect;
+      await _settle();
+
+      expect(room.calls, ['connect', 'dispose', 'disconnect', 'dispose']);
+    });
+
+    test(
+        'tears the room down and reports the original error when stopping the '
+        'microphone fails', () async {
+      final publishFailed = Exception('Publish timed out');
+      final room = _FakeRoom(onPublish: () async => throw publishFailed);
+      final manager = _MicrophoneLiveKitManager(
+        (_) async => _FakeMicrophone(stopError: Exception('Device busy')),
+        onCreateRoom: () => room,
+      );
+      addTearDown(manager.dispose);
+
+      await expectLater(
+        manager.connect(unreachableUrl, 'token'),
+        throwsA(same(publishFailed)),
+      );
+
+      expect(room.calls, ['connect', 'publish', 'disconnect', 'dispose']);
+      expect(manager.room, isNull);
     });
 
     test('tears the room down when publishing the microphone fails', () async {
