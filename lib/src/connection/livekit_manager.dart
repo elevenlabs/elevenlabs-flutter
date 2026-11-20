@@ -97,7 +97,14 @@ class LiveKitManager {
     try {
       // Clean up any existing connection
       final disconnects = ++_disconnects;
+      void throwIfDisconnected() {
+        if (_disconnects != disconnects) {
+          throw StateError('Disconnected before connecting to the room');
+        }
+      }
+
       await _tearDown();
+      throwIfDisconnected();
 
       final room = Room(roomOptions: _roomOptions);
       listenToRoom(room);
@@ -112,11 +119,9 @@ class LiveKitManager {
         );
       }
 
+      throwIfDisconnected();
       unpublishedMicrophone = await acquireMicrophone();
-
-      if (_disconnects != disconnects) {
-        throw StateError('Disconnected before connecting to the room');
-      }
+      throwIfDisconnected();
 
       await room.connect(serverUrl, token);
 

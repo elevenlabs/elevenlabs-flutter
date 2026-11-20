@@ -312,10 +312,14 @@ void main() {
       expect(microphone.stopped, isTrue);
     });
 
-    test('does not connect when disconnected while cleaning up the last room',
-        () async {
-      final microphone = _FakeMicrophone();
-      final manager = _MicrophoneLiveKitManager((_) async => microphone);
+    test(
+        'does not acquire the microphone when disconnected while cleaning up '
+        'the last room', () async {
+      var acquired = false;
+      final manager = _MicrophoneLiveKitManager((_) async {
+        acquired = true;
+        return _FakeMicrophone();
+      });
       addTearDown(manager.dispose);
       manager.listenToRoom(livekit.Room());
 
@@ -326,7 +330,8 @@ void main() {
       await manager.disconnect();
 
       await connecting;
-      expect(microphone.stopped, isTrue);
+      expect(acquired, isFalse);
+      expect(manager.room, isNull);
     });
 
     test('stops the microphone when connecting to the room fails', () async {
