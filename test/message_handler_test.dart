@@ -356,6 +356,86 @@ void main() {
       fakeManager.close();
     });
   });
+
+  group('MessageHandler - onIncomingEvent', () {
+    // The server-to-client messages of /v1/convai/conversation in
+    // https://api.elevenlabs.io/convai-asyncapi.yml
+    const publishedEventTypes = [
+      'conversation_initiation_metadata',
+      'agent_response_complete',
+      'context_usage',
+      'mcp_tool_call',
+      'client_error',
+      'guardrail_triggered',
+      'user_transcript',
+      'agent_response',
+      'queue_status',
+      'agent_response_correction',
+      'agent_response_metadata',
+      'audio',
+      'interruption',
+      'vad_score',
+      'agent_chat_response_part',
+      'client_tool_call',
+      'agent_tool_response',
+      'agent_tool_response_full_payload',
+      'agent_tool_request',
+      'ping',
+      'mcp_connection_status',
+    ];
+
+    test('receives every published event type', () async {
+      final received = <Map<String, dynamic>>[];
+      final fakeManager = _FakeLiveKitManager();
+      final handler = MessageHandler(
+        callbacks: ConversationCallbacks(onIncomingEvent: received.add),
+        liveKit: fakeManager,
+      );
+
+      handler.startListening();
+
+      final messages = [
+        for (final type in publishedEventTypes) {'type': type},
+      ];
+      messages.forEach(fakeManager.inject);
+
+      await Future.delayed(Duration.zero);
+
+      expect(received, equals(messages));
+
+      handler.dispose();
+      fakeManager.close();
+    });
+
+    test('still handles an event when the callback throws', () async {
+      String? errorMessage;
+      final fakeManager = _FakeLiveKitManager();
+      final handler = MessageHandler(
+        callbacks: ConversationCallbacks(
+          onIncomingEvent: (_) => throw StateError('app bug'),
+          onError: (message, [context]) => errorMessage = message,
+        ),
+        liveKit: fakeManager,
+      );
+
+      handler.startListening();
+
+      fakeManager.inject({
+        'type': 'ping',
+        'ping_event': {'event_id': 7},
+      });
+
+      await Future.delayed(Duration.zero);
+
+      expect(fakeManager.sentMessages, [
+        {'type': 'pong', 'event_id': 7},
+      ]);
+      expect(errorMessage, 'onIncomingEvent callback failed');
+
+      handler.dispose();
+      fakeManager.close();
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------

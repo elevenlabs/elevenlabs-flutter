@@ -61,6 +61,10 @@ class ConversationCallbacks {
   /// Called when an agent tool response is received
   final void Function(AgentToolResponse response)? onAgentToolResponse;
 
+  /// Called with every event the agent sends, as its raw JSON, before the SDK
+  /// handles it. This includes event types that have no dedicated callback.
+  final void Function(Map<String, dynamic> event)? onIncomingEvent;
+
   /// Called with debug information
   final void Function(dynamic data)? onDebug;
 
@@ -101,6 +105,7 @@ class ConversationCallbacks {
     this.onMcpConnectionStatus,
     this.onAgentToolRequest,
     this.onAgentToolResponse,
+    this.onIncomingEvent,
     this.onDebug,
     this.onEndCallRequested,
     this.onTentativeUserTranscript,

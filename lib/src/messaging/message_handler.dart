@@ -53,6 +53,12 @@ class MessageHandler {
       final eventType = json['type'] as String?;
       if (eventType == null) return;
 
+      try {
+        callbacks.onIncomingEvent?.call(json);
+      } catch (e) {
+        callbacks.onError?.call('onIncomingEvent callback failed', e);
+      }
+
       switch (eventType) {
         case 'conversation_initiation_metadata':
           callbacks.onDebug?.call(json);
