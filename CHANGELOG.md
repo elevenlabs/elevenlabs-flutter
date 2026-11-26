@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-26
+
+### Removed
+
+- **Breaking:** Removed `ClientOverrides.version`. The SDK now always reports its own package version in `source_info`, whatever overrides the application passes. To migrate, drop the `version` argument from `ClientOverrides(...)`.
+
+### Changed
+
+- When the agent calls a client tool that has no registered handler, the SDK now sends the agent an error result (`Tool '<name>' is not registered`) instead of leaving it waiting. `onUnhandledClientToolCall` is still called.
+- Raised the `livekit_client` minimum to `^2.13.0`.
+
+### Fixed
+
+- `onDisconnect` now fires once per session end, and reports `agent` when the agent ends the call and `error` when a room failure ends it. Previously an agent leaving followed by the room closing notified twice, and an agent `end_call` was reported as `user`.
+- Replaced the deprecated `Hardware.setSpeakerphoneOn` call with `AudioManager.setSpeakerOutputPreferred`, which fixes `flutter analyze` against `livekit_client` 2.13.
+
 ## [0.6.1] - 2026-06-01
 
 ### Fixed
@@ -100,6 +116,7 @@ Re-release of 0.5.0 with the version correctly bumped in package source files.
 - iOS 13.0+
 - Android API 21+
 
+[0.7.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.7.0
 [0.6.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.6.1
 [0.6.0]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.6.0
 [0.5.1]: https://github.com/elevenlabs/elevenlabs-flutter/releases/tag/v0.5.1
